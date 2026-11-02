@@ -16,7 +16,7 @@ import SwiftUI
     }
     func make(_ panel: Panel, size: NSSize, origin: NSPoint) {
         let window = PlayerWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "MacAmp \(panel.rawValue)"; window.isReleasedWhenClosed = false; window.isMovableByWindowBackground = true; window.delegate = self
+        window.title = "Mac-Amp \(panel.rawValue)"; window.isReleasedWhenClosed = false; window.isMovableByWindowBackground = true; window.delegate = self
         window.setFrameAutosaveName("MacAmp.\(panel.rawValue)")
         panels[panel] = window; update(panel); window.orderFront(nil)
     }
@@ -58,7 +58,7 @@ final class PlayerWindow: NSWindow { override var canBecomeKey: Bool { true }; o
         let main = NSMenu(); NSApp.mainMenu = main
         func menu(_ name: String) -> NSMenu { let item = NSMenuItem(); let sub = NSMenu(title: name); item.submenu = sub; main.addItem(item); return sub }
         func item(_ menu: NSMenu, _ name: String, _ action: Selector, _ key: String = "", modifiers: NSEvent.ModifierFlags = .command) { let i = NSMenuItem(title: name,action: action,keyEquivalent: key); i.target = self; i.keyEquivalentModifierMask = modifiers; menu.addItem(i) }
-        let app = menu("MacAmp"); item(app,"About MacAmp",#selector(about)); app.addItem(.separator()); item(app,"Hide MacAmp",#selector(hide),"h"); item(app,"Quit MacAmp",#selector(quit),"q")
+        let app = menu("Mac-Amp"); item(app,"About Mac-Amp",#selector(about)); app.addItem(.separator()); item(app,"Hide Mac-Amp",#selector(hide),"h"); item(app,"Quit Mac-Amp",#selector(quit),"q")
         let file = menu("File"); item(file,"Add Files or Folders…",#selector(add),"o")
         let edit = menu("Edit")
         for (name, action, key) in [("Copy", #selector(NSText.copy(_:)), "c"), ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")] { edit.addItem(NSMenuItem(title: name, action: action, keyEquivalent: key)) }
@@ -74,7 +74,7 @@ final class PlayerWindow: NSWindow { override var canBecomeKey: Bool { true }; o
     @objc func playlist() { windows.toggle(.playlist) }; @objc func eq() { windows.toggle(.equalizer) }
     @objc func resize(_ sender: NSMenuItem) { windows.scale(Double(sender.tag)) }
     @objc func hide() { NSApp.hide(nil) }; @objc func quit() { NSApp.terminate(nil) }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"MacAmp", .applicationVersion:"0.1.0", .credits:NSAttributedString(string:"Local music. Familiar little windows.\nOriginal retro artwork. Audio powered by SFBAudioEngine.\nSee THIRD_PARTY_NOTICES.md in the app resources.")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Mac-Amp", .applicationVersion:"0.1.0", .credits:NSAttributedString(string:"Local music. Familiar little windows.\nOriginal retro artwork. Audio powered by SFBAudioEngine.\nSee THIRD_PARTY_NOTICES.md in the app resources.")]) }
 }
 @main struct MacAmpApp {
     @MainActor static func main() {

@@ -86,7 +86,7 @@ struct PlayerView: View {
     var windows: Windows
     func time(_ value: Double) -> String { let n = Int(max(0, value)); return String(format: "%02d:%02d", n / 60, n % 60) }
     var body: some View {
-        Chrome(title: "M A C A M P", close: { NSApp.hide(nil) }) {
+        Chrome(title: "Mac-Amp", close: { NSApp.hide(nil) }) {
             HStack(spacing: 5) {
                 VStack(spacing: 1) {
                     Button { model.remaining.toggle() } label: {
@@ -97,7 +97,7 @@ struct PlayerView: View {
                     }.frame(height: 18)
                 }.frame(width: 104).background(Color.black)
                 VStack(spacing: 2) {
-                    Ticker(text: model.current?.title ?? "DROP YOUR MUSIC HERE • MACAMP")
+                    Ticker(text: model.current?.title ?? "DROP YOUR MUSIC HERE • Mac-Amp")
                     HStack { Text(model.current?.url.pathExtension.uppercased() ?? "LOCAL AUDIO"); Spacer(); Text(model.playing ? "STEREO ▶" : "READY") }.font(.system(size: 7, design: .monospaced)).foregroundStyle(phosphor).padding(2).background(.black)
                     HStack(spacing: 2) {
                         RetroSlider(value: $model.session.volume, range: 0...1).accessibilityLabel("Volume")
@@ -122,7 +122,7 @@ struct PlayerView: View {
             }.buttonStyle(RetroButton())
         }.frame(width: 275, height: 116)
         .onDrop(of: [.fileURL], isTargeted: nil, perform: receive)
-        .alert("MacAmp", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) { Button("OK") { model.message = nil } } message: { Text(model.message ?? "") }
+        .alert("Mac-Amp", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) { Button("OK") { model.message = nil } } message: { Text(model.message ?? "") }
     }
     func receive(_ providers: [NSItemProvider]) -> Bool {
         for provider in providers { _ = provider.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in model.add([url]) } } } }; return true
@@ -133,7 +133,7 @@ struct PlaylistView: View {
     var windows: Windows
     @State private var selection = Set<UUID>()
     var body: some View {
-        Chrome(title: "MACAMP • PLAYLIST", close: { windows.toggle(.playlist) }) {
+        Chrome(title: "Mac-Amp • PLAYLIST", close: { windows.toggle(.playlist) }) {
             List(selection: $selection) {
                 ForEach(Array(model.session.tracks.enumerated()), id: \.element.id) { index, track in
                     HStack(spacing: 3) {
@@ -173,7 +173,7 @@ struct EqualizerView: View {
     var windows: Windows
     let labels = ["31","62","125","250","500","1K","2K","4K","8K","16K"]
     var body: some View {
-        Chrome(title: "MACAMP • EQUALIZER", close: { windows.toggle(.equalizer) }) {
+        Chrome(title: "Mac-Amp • EQUALIZER", close: { windows.toggle(.equalizer) }) {
             HStack {
                 Button(model.session.eqEnabled ? "ON ●" : "OFF") { model.session.eqEnabled.toggle(); model.changed() }
                 Button("FLAT") { model.session.bands = Array(repeating: 0, count: 10); model.session.preamp = 0; model.changed() }
