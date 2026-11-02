@@ -32,7 +32,7 @@ import MacAmpCore
         let size = NSSize(width: 275, height: panel == .playlist ? 245 : 116)
         let view: AnyView
         switch panel {
-        case .player: view = AnyView(PlayerView(model: model, windows: self))
+        case .player: view = AnyView(PlayerView(model: model, live: model.live, windows: self))
         case .playlist: view = AnyView(PlaylistView(model: model, windows: self))
         case .equalizer: view = AnyView(EqualizerView(model: model, windows: self))
         }
@@ -57,26 +57,36 @@ import MacAmpCore
         saveFrames(); model.save()
     }
     /// Moves windows ourselves instead of via AppKit's window-server drag, so attached
-    /// panels follow every mouse step and loose panels snap live to the others' edges.
+    /// panels follow every mouse step. While dragging, a window snaps to other panels' edges
+    /// (the player to loose panels, which then become attached) and then to screen edges,
+    /// and the group is never pushed under the menu bar.
     func drag(_ panel: Panel, with event: NSEvent) {
-        guard let window = panels[panel] else { return }
+        guard let window = panels[panel], let origin = panels[panel]?.frame.origin else { return }
         let start = panels.mapValues(\.frame)
-        let followers: [Panel]
+        var followers: [Panel] = []
         if panel == .player {
             let connected = WindowDocking.connected(to: panel.rawValue, frames: Dictionary(uniqueKeysWithValues: start.map { ($0.key.rawValue, $0.value) }))
             followers = panels.keys.filter { $0 != panel && connected.contains($0.rawValue) }
-        } else { followers = [] }
-        let targets = panels.filter { $0.key != panel && $0.value.isVisible }.map(\.value.frame)
+        }
+        let targets = panels.filter { $0.key != panel && !followers.contains($0.key) && $0.value.isVisible }.map(\.value.frame)
+        let groupStart = ([panel] + followers.filter { panels[$0]?.isVisible == true }).compactMap { start[$0] }.reduce(CGRect.null) { $0.union($1) }
         let snapDistance = max(24, 12 * model.session.scale)
         for follower in followers where panels[follower]?.isVisible == true { panels[follower]?.orderFront(nil) }
         window.makeKeyAndOrderFront(nil)
         let mouseStart = NSEvent.mouseLocation
-        let origin = window.frame.origin
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             let mouse = NSEvent.mouseLocation
-            var frame = window.frame
-            frame.origin = CGPoint(x: origin.x + mouse.x - mouseStart.x, y: origin.y + mouse.y - mouseStart.y)
-            if panel != .player { frame = WindowDocking.snapped(frame, to: targets, distance: snapDistance) }
+            let raw = CGRect(origin: CGPoint(x: origin.x + mouse.x - mouseStart.x, y: origin.y + mouse.y - mouseStart.y), size: window.frame.size)
+            var frame = WindowDocking.snapped(raw, to: targets, distance: snapDistance)
+            let bounds = (NSScreen.screens.first { $0.frame.contains(mouse) } ?? window.screen ?? NSScreen.main)?.visibleFrame
+            if let bounds {
+                var group = groupStart.offsetBy(dx: frame.minX - origin.x, dy: frame.minY - origin.y)
+                if frame == raw {
+                    let edged = WindowDocking.snappedToEdges(group, in: bounds, distance: snapDistance)
+                    frame = frame.offsetBy(dx: edged.minX - group.minX, dy: edged.minY - group.minY); group = edged
+                }
+                if group.maxY > bounds.maxY { frame.origin.y -= group.maxY - bounds.maxY }
+            }
             window.setFrameOrigin(frame.origin)
             for follower in followers {
                 guard let initial = start[follower] else { continue }
@@ -109,7 +119,7 @@ final class PlayerWindow: NSWindow {
     }
     var titleDrag: ((NSEvent) -> Void)?
     override var canBecomeKey: Bool { true }; override var canBecomeMain: Bool { true } }
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var model: Model!
     var windows: Windows!
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -128,10 +138,19 @@ final class PlayerWindow: NSWindow {
         let file = menu("File"); item(file,"Add Files or Folders…",#selector(add),"o")
         let edit = menu("Edit")
         for (name, action, key) in [("Copy", #selector(NSText.copy(_:)), "c"), ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")] { edit.addItem(NSMenuItem(title: name, action: action, keyEquivalent: key)) }
+        item(edit, "Find in Playlist…", #selector(find), "f"); item(edit, "Jump to Track…", #selector(find), "j", modifiers: [])
         let playback = menu("Playback"); item(playback,"Play / Pause",#selector(toggle)," ",modifiers: []); item(playback,"Stop",#selector(stop),"."); item(playback,"Next",#selector(next),"]"); item(playback,"Previous",#selector(previous),"[")
         let view = menu("View"); item(view,"Playlist",#selector(playlist),"l"); item(view,"Equalizer",#selector(eq),"e")
         for scale in 1...3 { let i = NSMenuItem(title: "\(scale)× Size",action: #selector(resize(_:)),keyEquivalent: "\(scale)"); i.target = self; i.tag = scale; view.addItem(i) }
         let window = menu("Window"); NSApp.windowsMenu = window; item(window,"Minimize Player",#selector(minimize),"m"); item(window,"Show Player",#selector(showPlayer),"0")
+    }
+    /// Plain-key shortcuts (Space, J) step aside while a text field is being edited.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        !(menuItem.keyEquivalentModifierMask.isEmpty && !menuItem.keyEquivalent.isEmpty && NSApp.keyWindow?.firstResponder is NSTextView)
+    }
+    @objc func find() {
+        if windows.panels[.playlist]?.isVisible != true { windows.toggle(.playlist) }
+        windows.panels[.playlist]?.makeKeyAndOrderFront(nil); model.findInPlaylist()
     }
     @objc func minimize() { windows.panels[.player]?.miniaturize(nil) }
     @objc func showPlayer() { windows.panels[.player]?.deminiaturize(nil); windows.panels[.player]?.makeKeyAndOrderFront(nil) }

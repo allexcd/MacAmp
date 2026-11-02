@@ -49,4 +49,14 @@ public enum WindowDocking {
         }
         return best
     }
+
+    /// Pulls a window (or a docked group's bounding box) flush to screen edges within `distance`.
+    public static func snappedToEdges(_ rect: CGRect, in bounds: CGRect, distance: CGFloat) -> CGRect {
+        var result = rect
+        if abs(rect.minX - bounds.minX) <= distance { result.origin.x = bounds.minX }
+        else if abs(rect.maxX - bounds.maxX) <= distance { result.origin.x = bounds.maxX - rect.width }
+        if abs(rect.maxY - bounds.maxY) <= distance { result.origin.y = bounds.maxY - rect.height }
+        else if abs(rect.minY - bounds.minY) <= distance { result.origin.y = bounds.minY }
+        return result
+    }
 }

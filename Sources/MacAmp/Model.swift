@@ -2,16 +2,32 @@ import AppKit
 import SwiftUI
 import AVFoundation
 import SFBAudioEngine
+import MediaPlayer
 #if canImport(MacAmpCore)
 import MacAmpCore
 #endif
 
-@MainActor final class Model: ObservableObject {
-    @Published var session: Session
+/// Values that change many times a second. Only the player window observes this,
+/// so the playlist and equalizer don't redraw on every timer tick.
+@MainActor final class LiveState: ObservableObject {
     @Published var playing = false
     @Published var duration: Double = 0
     @Published var position: Double = 0
     @Published var bars: [Float] = Array(repeating: 0, count: 20)
+}
+
+@MainActor final class Model: ObservableObject {
+    @Published var session: Session
+    @Published var searchToken = 0
+    let live = LiveState()
+    // Forwarders only publish real changes, so an idle player triggers no redraws.
+    var playing: Bool { get { live.playing } set { if live.playing != newValue { live.playing = newValue } } }
+    var duration: Double { get { live.duration } set { if live.duration != newValue { live.duration = newValue } } }
+    var position: Double { get { live.position } set { if live.position != newValue { live.position = newValue } } }
+    var bars: [Float] { get { live.bars } set { if live.bars != newValue { live.bars = newValue } } }
+    private static let silent = Array(repeating: Float(0), count: 20)
+    private var pendingSave: DispatchWorkItem?
+    private var nowPlayingKey = ""
     @Published var message: String?
     @Published var remaining = false
     @Published var importing = false
@@ -33,6 +49,7 @@ import MacAmpCore
         audio.apply(session)
         audio.onEnd = { [weak self] in self?.advance(automatic: true) }
         audio.onError = { [weak self] error in self?.handleFailure(error) }
+        setUpRemoteCommands()
         timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in Task { @MainActor in self?.tick() } }
     }
     func tick() {
@@ -40,11 +57,24 @@ import MacAmpCore
         if let value = audio.player.totalTime, value.isFinite { duration = value }
         if let target = pendingSeek, audio.player.supportsSeeking { _ = audio.player.seek(time: target); pendingSeek = nil }
         if loaded != nil, pendingSeek == nil, let value = audio.player.currentTime, value.isFinite { position = value }
-        bars = playing ? audio.spectrum.read() : Array(repeating: 0, count: 20)
-        ticks += 1; if ticks % 50 == 0 { save() }
+        bars = playing ? audio.spectrum.read() : Self.silent
+        ticks += 1; if playing && ticks % 50 == 0 { save() }
+        let key = "\(loaded?.uuidString ?? "-")|\(playing)|\(Int(duration))"
+        if key != nowPlayingKey { nowPlayingKey = key; updateNowPlaying() }
     }
-    func save() { session.position = position; do { try SessionStore.save(session, to: stateURL) } catch { message = "Could not save session: \(error.localizedDescription)" } }
-    func changed() { audio.apply(session); save() }
+    func save() {
+        pendingSave?.cancel(); pendingSave = nil
+        if session.position != position { session.position = position }
+        do { try SessionStore.save(session, to: stateURL) } catch { message = "Could not save session: \(error.localizedDescription)" } }
+    /// Sliders call this on every drag step: apply the sound now, write to disk once they settle.
+    func changed() {
+        audio.apply(session)
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.save() }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+    func pause() { if audio.player.isPlaying { _ = audio.player.pause() } }
     func toggle() {
         if audio.player.isPlaying { _ = audio.player.pause() }
         else if audio.player.isPaused { _ = audio.player.resume() }
@@ -95,7 +125,54 @@ import MacAmpCore
     func advance(automatic: Bool = false, backwards: Bool = false) {
         if let id = session.next(after: session.selected, backwards: backwards, automatic: automatic) { play(id) } else { stop() }
     }
-    func seek(_ value: Double) { position = value; if loaded != nil { _ = audio.player.seek(time: value) }; save() }
+    func seek(_ value: Double) { position = value; if loaded != nil { _ = audio.player.seek(time: value) }; changed(); updateNowPlaying() }
+    func findInPlaylist() { searchToken += 1 }
+
+    // MARK: Media keys, Control Center and the Now Playing widget
+    private func setUpRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        func on(_ command: MPRemoteCommand, _ action: @escaping @MainActor (Model) -> Void) {
+            command.isEnabled = true
+            command.addTarget { [weak self] _ in
+                guard let self else { return .commandFailed }
+                Task { @MainActor in action(self) }
+                return .success
+            }
+        }
+        on(center.togglePlayPauseCommand) { $0.toggle() }
+        on(center.playCommand) { if !$0.audio.player.isPlaying { $0.toggle() } }
+        on(center.pauseCommand) { $0.pause() }
+        on(center.stopCommand) { $0.stop() }
+        on(center.nextTrackCommand) { $0.advance() }
+        on(center.previousTrackCommand) { $0.advance(backwards: true) }
+        center.changePlaybackPositionCommand.isEnabled = true
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            let time = event.positionTime
+            Task { @MainActor in self?.seek(time) }
+            return .success
+        }
+    }
+    func updateNowPlaying() {
+        let center = MPNowPlayingInfoCenter.default()
+        guard loaded != nil, let track = current else {
+            center.nowPlayingInfo = nil; center.playbackState = .stopped; return
+        }
+        let parts = track.title.components(separatedBy: " — ")
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: parts.count > 1 ? parts.dropFirst().joined(separator: " — ") : track.title,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+            MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
+        ]
+        if parts.count > 1 { info[MPMediaItemPropertyArtist] = parts[0] }
+        if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
+        if let icon = NSApp?.applicationIconImage {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: icon.size) { _ in icon }
+        }
+        center.nowPlayingInfo = info
+        center.playbackState = playing ? .playing : .paused
+    }
     func remove(_ ids: Set<UUID>) {
         if let selected = session.selected, ids.contains(selected) { stop(); session.selected = nil }
         session.tracks.removeAll { ids.contains($0.id) }; save()

@@ -26,4 +26,11 @@ final class WindowDockingTests: XCTestCase {
         frames["eq"]?.origin.x += 400
         XCTAssertEqual(WindowDocking.connected(to: "player", frames: frames), ["player"])
     }
+    func testScreenEdgeSnapping() {
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 944)
+        XCTAssertEqual(WindowDocking.snappedToEdges(CGRect(x: 15, y: 300, width: 275, height: 116), in: screen, distance: 24).origin, CGPoint(x: 0, y: 300))
+        XCTAssertEqual(WindowDocking.snappedToEdges(CGRect(x: 1230, y: 820, width: 275, height: 116), in: screen, distance: 24).origin, CGPoint(x: 1237, y: 828))
+        let middle = CGRect(x: 600, y: 400, width: 275, height: 116)
+        XCTAssertEqual(WindowDocking.snappedToEdges(middle, in: screen, distance: 24), middle)
+    }
 }
