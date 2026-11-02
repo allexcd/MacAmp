@@ -136,6 +136,7 @@ struct PlaylistView: View {
     @State private var selection = Set<UUID>()
     var body: some View {
         Chrome(title: "Mac-Amp • PLAYLIST", close: { windows.toggle(.playlist) }) {
+            ScrollViewReader { scroller in
             List(selection: $selection) {
                 ForEach(Array(model.session.tracks.enumerated()), id: \.element.id) { index, track in
                     HStack(spacing: 3) {
@@ -162,6 +163,13 @@ struct PlaylistView: View {
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     for provider in providers { _ = provider.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in model.add([url]) } } } }; return true
                 }
+                // Keep the playing track in view when Next/Previous/shuffle jumps elsewhere in the list.
+                .onChange(of: model.session.selected) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { scroller.scrollTo(id, anchor: .center) }
+                }
+                .onAppear { if let id = model.session.selected { scroller.scrollTo(id, anchor: .center) } }
+            }
             HStack(spacing: 3) {
                 Button("+ ADD") { model.choose() }; Button("− REM") { model.remove(selection); selection.removeAll() }
                 Button("CLEAR") { model.remove(Set(model.session.tracks.map(\.id))) }
