@@ -1,0 +1,10 @@
+#!/bin/zsh
+set -eu
+mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+for framework in "$BUILT_PRODUCTS_DIR"/*.framework; do
+  destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/${framework:t}"
+  ditto "$framework" "$destination"
+  codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$destination"
+done
+cp "$SRCROOT/THIRD_PARTY_NOTICES.md" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
+cp -R "$SRCROOT/Licenses" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"

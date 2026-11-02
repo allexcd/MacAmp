@@ -1,0 +1,3 @@
+// swift-tools-version: 6.0
+import PackageDescription
+let package = Package(name: "MacAmp", platforms: [.macOS(.v15)], products: [.executable(name: "MacAmp", targets: ["MacAmp"])], dependencies: [.package(url: "https://github.com/sbooth/SFBAudioEngine", exact: "0.14.0")], targets: [.target(name: "MacAmpCore"), .executableTarget(name: "MacAmp", dependencies: ["MacAmpCore", .product(name: "SFBAudioEngine", package: "SFBAudioEngine")]), .testTarget(name: "MacAmpCoreTests", dependencies: ["MacAmpCore", .product(name: "SFBAudioEngine", package: "SFBAudioEngine")]), .testTarget(name: "MacAmpTests", dependencies: ["MacAmp"])], swiftLanguageModes: [.v5])

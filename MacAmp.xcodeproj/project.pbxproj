@@ -1,0 +1,26 @@
+// !$*UTF8*$!
+{archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+B2E39D0664CD8D53941BBC87 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/MacAmp/App.swift"; sourceTree = SOURCE_ROOT; };
+A249DDA19BB41A53BB8F2494 = {isa = PBXBuildFile; fileRef = B2E39D0664CD8D53941BBC87; };
+2FC16472744FB89A74D07951 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/MacAmp/Model.swift"; sourceTree = SOURCE_ROOT; };
+913CF176CAA467D628430FE0 = {isa = PBXBuildFile; fileRef = 2FC16472744FB89A74D07951; };
+2345E46352C175716337674A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/MacAmp/Playback.swift"; sourceTree = SOURCE_ROOT; };
+D25E1167EFA93C6AC2275532 = {isa = PBXBuildFile; fileRef = 2345E46352C175716337674A; };
+84EB4E09972A042E06AADD0B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/MacAmp/Views.swift"; sourceTree = SOURCE_ROOT; };
+4AF090DF56D724E72C1CAF6A = {isa = PBXBuildFile; fileRef = 84EB4E09972A042E06AADD0B; };
+B70D45B4BB3B2391E3EB3C40 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/MacAmpCore/Session.swift"; sourceTree = SOURCE_ROOT; };
+6A483D94B26B20FA07B3CE2C = {isa = PBXBuildFile; fileRef = B70D45B4BB3B2391E3EB3C40; };
+38A007151ABE87CC01A5B6E9 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = MacAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+64292B1C2B2E13EAD8788FC8 = {isa = PBXGroup; children = (B2E39D0664CD8D53941BBC87,2FC16472744FB89A74D07951,2345E46352C175716337674A,84EB4E09972A042E06AADD0B,B70D45B4BB3B2391E3EB3C40,38A007151ABE87CC01A5B6E9); sourceTree = "<group>"; };
+41FFE5457D1A557C3317F2E5 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/sbooth/SFBAudioEngine"; requirement = {kind = exactVersion; version = 0.14.0; }; };
+E9FAD0C6CD43534327C0AF90 = {isa = XCSwiftPackageProductDependency; package = 41FFE5457D1A557C3317F2E5; productName = SFBAudioEngine; };
+4F0AA52D656A3D75867F784B = {isa = PBXBuildFile; productRef = E9FAD0C6CD43534327C0AF90; };
+BCE16DD0260827ECF338C787 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A249DDA19BB41A53BB8F2494,913CF176CAA467D628430FE0,D25E1167EFA93C6AC2275532,4AF090DF56D724E72C1CAF6A,6A483D94B26B20FA07B3CE2C); runOnlyForDeploymentPostprocessing = 0; };
+7561BFB015D8F536760CB671 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (4F0AA52D656A3D75867F784B); runOnlyForDeploymentPostprocessing = 0; };
+BD604D99E75E45D38BC7AC8F = {isa = XCBuildConfiguration; name = Debug; buildSettings = {SDKROOT = macosx; ENABLE_USER_SCRIPT_SANDBOXING = NO; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MACOSX_DEPLOYMENT_TARGET = 15.0; ARCHS = arm64; SWIFT_VERSION = 5.0; PRODUCT_NAME = MacAmp; PRODUCT_BUNDLE_IDENTIFIER = dev.macamp.prototype; INFOPLIST_FILE = Config/Info.plist; CODE_SIGN_ENTITLEMENTS = Config/MacAmp.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
+D41F56CEA1AC933D25C57AEB = {isa = XCBuildConfiguration; name = Release; buildSettings = {SDKROOT = macosx; ENABLE_USER_SCRIPT_SANDBOXING = NO; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MACOSX_DEPLOYMENT_TARGET = 15.0; ARCHS = arm64; SWIFT_VERSION = 5.0; PRODUCT_NAME = MacAmp; PRODUCT_BUNDLE_IDENTIFIER = dev.macamp.prototype; INFOPLIST_FILE = Config/Info.plist; CODE_SIGN_ENTITLEMENTS = Config/MacAmp.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = YES; SWIFT_OPTIMIZATION_LEVEL = "-O"; }; };
+DFBA7AADE0868074C2861C98 = {isa = XCConfigurationList; buildConfigurations = (BD604D99E75E45D38BC7AC8F,D41F56CEA1AC933D25C57AEB); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+CFFF27C96089B93150F3553B = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/zsh; shellScript = "\"$SRCROOT/scripts/embed-frameworks.sh\""; };
+0E8A3AD980EC179856012B7E = {isa = PBXNativeTarget; buildConfigurationList = DFBA7AADE0868074C2861C98; buildPhases = (BCE16DD0260827ECF338C787,7561BFB015D8F536760CB671,CFFF27C96089B93150F3553B); buildRules = (); dependencies = (); name = MacAmp; productName = MacAmp; productReference = 38A007151ABE87CC01A5B6E9; productType = "com.apple.product-type.application"; packageProductDependencies = (E9FAD0C6CD43534327C0AF90); };
+98F54143AB4E86B28C3AFEE0 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600; }; buildConfigurationList = DFBA7AADE0868074C2861C98; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en,Base); mainGroup = 64292B1C2B2E13EAD8788FC8; projectDirPath = ""; projectRoot = ""; targets = (0E8A3AD980EC179856012B7E); packageReferences = (41FFE5457D1A557C3317F2E5); };
+}; rootObject = 98F54143AB4E86B28C3AFEE0; }
