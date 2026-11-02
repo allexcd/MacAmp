@@ -158,6 +158,7 @@ struct PlaylistView: View {
                         TextField("", text: $query, prompt: Text("type a title or artist").foregroundStyle(.gray))
                             .textFieldStyle(.plain).font(.system(size: 9, design: .monospaced)).foregroundStyle(.white)
                             .focused($searchFocused)
+                            .onAppear { focusSearch() }
                             .onSubmit { if let first = rows.first { model.play(first.track.id); closeSearch(scroller) } }
                             .onExitCommand { closeSearch(scroller) }
                             .accessibilityLabel("Search playlist")
@@ -203,7 +204,7 @@ struct PlaylistView: View {
                         guard let id, !visible.contains(id) else { return }
                         withAnimation(.easeInOut(duration: 0.2)) { scroller.scrollTo(id, anchor: .center) }
                     }
-                    .onChange(of: model.searchToken) { searching = true; DispatchQueue.main.async { searchFocused = true } }
+                    .onChange(of: model.searchToken) { if searching { focusSearch() } else { searching = true } }
                     .onAppear { if let id = model.session.selected { scroller.scrollTo(id, anchor: .center) } }
             }
             HStack(spacing: 3) {
@@ -213,6 +214,13 @@ struct PlaylistView: View {
                 Spacer(); Text(model.importing ? "READING…" : "\(model.session.tracks.count) TRACKS").font(.system(size: 8, design: .monospaced)).foregroundStyle(phosphor)
             }.buttonStyle(RetroButton())
         }.frame(width: 275, height: 245)
+    }
+    /// The field only exists after the next render, and the window must be key to accept typing.
+    private func focusSearch() {
+        DispatchQueue.main.async {
+            windows.panels[.playlist]?.makeKeyAndOrderFront(nil)
+            searchFocused = true
+        }
     }
     private func closeSearch(_ scroller: ScrollViewProxy) {
         query = ""; searching = false; searchFocused = false
