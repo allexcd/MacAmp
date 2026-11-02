@@ -9,8 +9,13 @@ let metal = Color(red: 0.29, green: 0.30, blue: 0.35)
 /// AppKit handles the drag in screen coordinates, including across displays.
 struct WindowDragArea: NSViewRepresentable {
     final class DragView: NSView {
-        override var mouseDownCanMoveWindow: Bool { true }
-        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func mouseDown(with event: NSEvent) {
+            guard let window = window as? PlayerWindow else { return }
+            window.beginDrag?()
+            window.performDrag(with: event)
+            window.endDrag?()
+        }
     }
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ nsView: DragView, context: Context) {}
