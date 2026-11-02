@@ -6,10 +6,6 @@ import MacAmpCore
 
 @MainActor final class Windows: NSObject, NSWindowDelegate {
     enum Panel: String { case player, playlist, equalizer }
-    private var dragging: Panel?
-    private var dragFrames: [Panel: CGRect] = [:]
-    private var followers = Set<Panel>()
-    private var movingGroup = false
     let model: Model
     var panels: [Panel: NSWindow] = [:]
     init(model: Model) { self.model = model; super.init() }
@@ -23,9 +19,8 @@ import MacAmpCore
     }
     func make(_ panel: Panel, size: NSSize, origin: NSPoint) {
         let window = PlayerWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
-        window.beginDrag = { [weak self] in self?.beginDrag(panel) }
-        window.endDrag = { [weak self] in self?.endDrag(panel) }
-        window.title = "Mac-Amp \(panel.rawValue)"; window.isReleasedWhenClosed = false; window.isMovableByWindowBackground = true; window.delegate = self
+        window.titleDrag = { [weak self] event in self?.drag(panel, with: event) }
+        window.title = "Mac-Amp \(panel.rawValue)"; window.isReleasedWhenClosed = false; window.isMovableByWindowBackground = false; window.delegate = self
         window.setFrameAutosaveName("MacAmp.\(panel.rawValue)")
         panels[panel] = window; update(panel); window.orderFront(nil)
     }
@@ -61,28 +56,35 @@ import MacAmpCore
         }
         saveFrames(); model.save()
     }
-    func beginDrag(_ panel: Panel) {
-        dragging = panel; dragFrames = panels.mapValues(\.frame)
-        let connected = WindowDocking.connected(to: panel.rawValue, frames: Dictionary(uniqueKeysWithValues: dragFrames.map { ($0.key.rawValue, $0.value) }))
-        followers = panel == .player ? Set(panels.keys.filter { $0 != panel && connected.contains($0.rawValue) }) : []
-    }
-    func windowDidMove(_ notification: Notification) {
-        guard !movingGroup, dragging == .player, let window = notification.object as? NSWindow,
-              window === panels[.player], let start = dragFrames[.player] else { return }
-        movingGroup = true
-        for panel in followers {
-            if let frame = dragFrames[panel] {
-                panels[panel]?.setFrameOrigin(CGPoint(x: frame.minX + window.frame.minX-start.minX, y: frame.minY + window.frame.minY-start.minY))
+    /// Moves windows ourselves instead of via AppKit's window-server drag, so attached
+    /// panels follow every mouse step and loose panels snap live to the others' edges.
+    func drag(_ panel: Panel, with event: NSEvent) {
+        guard let window = panels[panel] else { return }
+        let start = panels.mapValues(\.frame)
+        let followers: [Panel]
+        if panel == .player {
+            let connected = WindowDocking.connected(to: panel.rawValue, frames: Dictionary(uniqueKeysWithValues: start.map { ($0.key.rawValue, $0.value) }))
+            followers = panels.keys.filter { $0 != panel && connected.contains($0.rawValue) }
+        } else { followers = [] }
+        let targets = panels.filter { $0.key != panel && $0.value.isVisible }.map(\.value.frame)
+        let snapDistance = max(24, 12 * model.session.scale)
+        for follower in followers where panels[follower]?.isVisible == true { panels[follower]?.orderFront(nil) }
+        window.makeKeyAndOrderFront(nil)
+        let mouseStart = NSEvent.mouseLocation
+        let origin = window.frame.origin
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let mouse = NSEvent.mouseLocation
+            var frame = window.frame
+            frame.origin = CGPoint(x: origin.x + mouse.x - mouseStart.x, y: origin.y + mouse.y - mouseStart.y)
+            if panel != .player { frame = WindowDocking.snapped(frame, to: targets, distance: snapDistance) }
+            window.setFrameOrigin(frame.origin)
+            for follower in followers {
+                guard let initial = start[follower] else { continue }
+                panels[follower]?.setFrameOrigin(CGPoint(x: initial.minX + frame.minX - origin.x, y: initial.minY + frame.minY - origin.y))
             }
+            if next.type == .leftMouseUp { break }
         }
-        movingGroup = false
-    }
-    func endDrag(_ panel: Panel) {
-        if panel != .player, let window = panels[panel] {
-            let targets = [Panel.player, .equalizer, .playlist].filter { $0 != panel }.compactMap { panels[$0] }.filter(\.isVisible).map(\.frame)
-            window.setFrame(WindowDocking.snapped(window.frame, to: targets), display: true)
-        }
-        dragging = nil; followers.removeAll(); dragFrames.removeAll(); saveFrames()
+        saveFrames()
     }
     private func saveFrames() {
         for (panel, window) in panels { window.saveFrame(usingName: "MacAmp.\(panel.rawValue)") }
@@ -100,13 +102,12 @@ final class PlayerWindow: NSWindow {
         let point = event.locationInWindow
         if event.type == .leftMouseDown, point.y >= frame.height - titleDragHeight,
            point.x >= 0, point.x < frame.width - closeButtonWidth {
-            beginDrag?(); performDrag(with: event); endDrag?()
+            titleDrag?(event)
             return
         }
         super.sendEvent(event)
     }
-    var beginDrag: (() -> Void)?
-    var endDrag: (() -> Void)?
+    var titleDrag: ((NSEvent) -> Void)?
     override var canBecomeKey: Bool { true }; override var canBecomeMain: Bool { true } }
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: Model!

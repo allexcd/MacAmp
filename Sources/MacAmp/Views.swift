@@ -6,15 +6,12 @@ import MacAmpCore
 
 let phosphor = Color(red: 0.5, green: 0.95, blue: 0.28)
 let metal = Color(red: 0.29, green: 0.30, blue: 0.35)
-/// AppKit handles the drag in screen coordinates, including across displays.
+/// Title-bar drag; Windows.drag moves the panel (and its attached panels) in screen coordinates.
 struct WindowDragArea: NSViewRepresentable {
     final class DragView: NSView {
         override var mouseDownCanMoveWindow: Bool { false }
         override func mouseDown(with event: NSEvent) {
-            guard let window = window as? PlayerWindow else { return }
-            window.beginDrag?()
-            window.performDrag(with: event)
-            window.endDrag?()
+            (window as? PlayerWindow)?.titleDrag?(event)
         }
     }
     func makeNSView(context: Context) -> DragView { DragView() }

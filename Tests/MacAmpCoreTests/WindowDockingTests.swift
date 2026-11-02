@@ -10,6 +10,11 @@ final class WindowDockingTests: XCTestCase {
             XCTAssertEqual(result.intersection(player).width * result.intersection(player).height, 0)
         }
     }
+    func testSnapsFromWiderReleaseZone() {
+        let below = CGRect(x: 310, y: 264, width: 275, height: 116) // 20 pt gap, 10 pt off-axis
+        let result = WindowDocking.snapped(below, to: [player], distance: 24)
+        XCTAssertEqual(result.origin, CGPoint(x: 300, y: 284))
+    }
     func testDetachedAndCornerWindowsStayIndependent() {
         let far = CGRect(x: 600,y: 400,width: 275,height: 116)
         XCTAssertEqual(WindowDocking.snapped(far,to: [player]), far)
