@@ -6,6 +6,15 @@ import MacAmpCore
 
 let phosphor = Color(red: 0.5, green: 0.95, blue: 0.28)
 let metal = Color(red: 0.29, green: 0.30, blue: 0.35)
+/// AppKit handles the drag in screen coordinates, including across displays.
+struct WindowDragArea: NSViewRepresentable {
+    final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    }
+    func makeNSView(context: Context) -> DragView { DragView() }
+    func updateNSView(_ nsView: DragView, context: Context) {}
+}
 struct Chrome<Content: View>: View {
     var title: String
     var close: () -> Void
@@ -13,9 +22,12 @@ struct Chrome<Content: View>: View {
     var body: some View {
         VStack(spacing: 3) {
             HStack(spacing: 4) {
-                Rectangle().fill(.gray).frame(height: 1)
-                Text(title).font(.system(size: 8, weight: .bold, design: .monospaced)).fixedSize()
-                Rectangle().fill(.gray).frame(height: 1)
+                HStack(spacing: 4) {
+                    Rectangle().fill(.gray).frame(height: 1)
+                    Text(title).font(.system(size: 8, weight: .bold, design: .monospaced)).fixedSize()
+                    Rectangle().fill(.gray).frame(height: 1)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(WindowDragArea().accessibilityLabel("Drag window"))
                 Button("×", action: close).buttonStyle(RetroButton()).accessibilityLabel("Close \(title)")
             }.frame(height: 11)
             content
