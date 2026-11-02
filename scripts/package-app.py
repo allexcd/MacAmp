@@ -18,4 +18,8 @@ with tempfile.TemporaryDirectory(prefix='MacAmp-package-', dir=output) as tempor
     if destination.exists():
         shutil.rmtree(destination)
     staged.rename(destination)
+# The app was assembled in a temp folder; re-register it at its final path so
+# Finder and the Dock pick up the current icon instead of a stale cached record.
+destination.touch()
+subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister','-f',str(destination)], check=False)
 print('Built and verified dist/MacAmp.app')

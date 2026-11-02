@@ -113,6 +113,8 @@ final class PlayerWindow: NSWindow {
     var model: Model!
     var windows: Windows!
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set the Dock icon directly so a stale LaunchServices cache can't show the generic one.
+        if let icon = Bundle.main.image(forResource: "AppIcon") { NSApp.applicationIconImage = icon }
         model = Model(); windows = Windows(model: model); windows.show(); menus(); NSApp.activate(ignoringOtherApps: true)
     }
     func applicationWillTerminate(_ notification: Notification) { model.save() }
