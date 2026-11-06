@@ -15,7 +15,6 @@ import MacAmpCore
     @Published var position: Double = 0 { didSet { positionDate = Date() } }
     /// When `position` last changed; lets animations extrapolate smoothly between updates.
     var positionDate = Date()
-    @Published var bars: [Float] = Array(repeating: 0, count: 20)
 }
 
 @MainActor final class Model: ObservableObject {
@@ -31,7 +30,6 @@ import MacAmpCore
     var playing: Bool { get { live.playing } set { if live.playing != newValue { live.playing = newValue } } }
     var duration: Double { get { live.duration } set { if live.duration != newValue { live.duration = newValue } } }
     var position: Double { get { live.position } set { if live.position != newValue { live.position = newValue } } }
-    var bars: [Float] { get { live.bars } set { if live.bars != newValue { live.bars = newValue } } }
     private static let silent = Array(repeating: Float(0), count: 20)
     private var pendingSave: DispatchWorkItem?
     private var nowPlayingKey = ""
@@ -65,7 +63,6 @@ import MacAmpCore
         if let value = audio.player.totalTime, value.isFinite { duration = value }
         if let target = pendingSeek, audio.player.supportsSeeking { _ = audio.player.seek(time: target); pendingSeek = nil }
         if loaded != nil, pendingSeek == nil, let value = audio.player.currentTime, value.isFinite { position = value }
-        bars = playing ? audio.spectrum.read() : Self.silent
         ticks += 1; if playing && ticks % 50 == 0 { save() }
         let key = "\(loaded?.uuidString ?? "-")|\(playing)|\(Int(duration))"
         if key != nowPlayingKey { nowPlayingKey = key; updateNowPlaying() }
@@ -135,6 +132,8 @@ import MacAmpCore
     }
     func seek(_ value: Double) { position = value; if loaded != nil { _ = audio.player.seek(time: value) }; changed(); updateNowPlaying() }
     func findInPlaylist() { searchToken += 1 }
+    /// Spectrum levels for the current display frame (silent unless playing).
+    func spectrumNow() -> [Float] { audio.player.isPlaying ? audio.spectrum.read(at: ProcessInfo.processInfo.systemUptime) : Self.silent }
 
     // MARK: Skins
     func reloadSkins() {

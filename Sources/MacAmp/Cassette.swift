@@ -27,7 +27,7 @@ struct CassetteFace: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.displayBackground)
                         .overlay(Rectangle().strokeBorder(palette.border, lineWidth: 0.5))
                 }.buttonStyle(.plain).accessibilityLabel("Toggle elapsed or remaining time")
-                SpectrumBars(bars: live.bars, barWidth: 3, height: 14).frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.displayBackground)
+                SpectrumBars(source: model.spectrumNow, active: live.playing, barWidth: 3, height: 14).frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.displayBackground)
                 HStack(spacing: 2) {
                     Circle().fill(live.playing ? palette["spectrumHigh"] : palette.displayDim).frame(width: 4, height: 4)
                     Text(live.playing ? "PLAY" : (live.position > 0 ? "PAUSE" : "STOP"))

@@ -118,7 +118,7 @@ struct PlayerView: View {
                 Button { model.remaining.toggle() } label: {
                     Text((model.remaining ? "−" : "") + clock(model.remaining ? live.duration - live.position : live.position)).font(.system(size: 23, weight: .regular, design: .monospaced)).foregroundStyle(palette.display)
                 }.buttonStyle(.plain).accessibilityLabel("Toggle elapsed or remaining time")
-                SpectrumBars(bars: live.bars, barWidth: 4, height: 18)
+                SpectrumBars(source: model.spectrumNow, active: live.playing, barWidth: 4, height: 18)
             }.frame(width: 104).background(palette.displayBackground)
             VStack(spacing: 2) {
                 Ticker(text: model.current?.title ?? "DROP YOUR MUSIC HERE • Mac-Amp", running: live.playing)
@@ -132,15 +132,58 @@ struct PlayerView: View {
         for provider in providers { _ = provider.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in model.add([url]) } } } }; return true
     }
 }
+/// Winamp-style analyzer motion: bars jump up instantly and fall back at a steady rate;
+/// peak markers hold briefly at the top, then drop with gravity.
+final class SpectrumMotion {
+    private(set) var levels = Array(repeating: Float(0), count: Spectrum.bands)
+    private(set) var peaks = Array(repeating: Float(0), count: Spectrum.bands)
+    private var peakVelocity = Array(repeating: Float(0), count: Spectrum.bands)
+    private var peakHoldUntil = Array(repeating: 0.0, count: Spectrum.bands)
+    private var last: TimeInterval?
+    static let fallRate: Float = 2.2        // full height per second
+    static let peakHold = 0.3               // seconds
+    static let peakGravity: Float = 3.5     // height per second²
+    var isIdle: Bool { !levels.contains { $0 > 0 } && !peaks.contains { $0 > 0 } }
+
+    func step(to targets: [Float], at now: TimeInterval) {
+        let dt = Float(min(0.1, max(0, now - (last ?? now)))); last = now
+        for i in levels.indices {
+            let target = i < targets.count ? targets[i] : 0
+            levels[i] = target >= levels[i] ? target : max(target, levels[i] - Self.fallRate * dt)
+            if levels[i] >= peaks[i] {
+                peaks[i] = levels[i]; peakVelocity[i] = 0; peakHoldUntil[i] = now + Self.peakHold
+            } else if now > peakHoldUntil[i] {
+                peakVelocity[i] += Self.peakGravity * dt
+                peaks[i] = max(levels[i], peaks[i] - peakVelocity[i] * dt)
+            }
+        }
+    }
+}
 struct SpectrumBars: View {
-    var bars: [Float]
+    var source: () -> [Float]
+    var active: Bool
     var barWidth: CGFloat
     var height: CGFloat
+    @State private var motion = SpectrumMotion()
+    @State private var settled = true
     @Environment(\.palette) private var palette
     var body: some View {
-        HStack(alignment: .bottom, spacing: 1) {
-            ForEach(0..<bars.count, id: \.self) { i in Rectangle().fill(palette.spectrum).frame(width: barWidth, height: max(1, CGFloat(bars[i]) * height)) }
-        }.frame(height: height)
+        // 60 fps while playing, and until the bars have fallen after a pause/stop; idle otherwise.
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !active && settled)) { context in
+            Canvas { g, size in
+                motion.step(to: active ? source() : [], at: context.date.timeIntervalSinceReferenceDate)
+                let fill = GraphicsContext.Shading.linearGradient(Gradient(colors: [palette["spectrumHigh"], palette["spectrumMid"], palette.display]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height))
+                for i in motion.levels.indices {
+                    let x = CGFloat(i) * (barWidth + 1)
+                    let bar = CGFloat(motion.levels[i]) * size.height
+                    if bar > 0.5 { g.fill(Path(CGRect(x: x, y: size.height - bar, width: barWidth, height: bar)), with: fill) }
+                    let peak = CGFloat(motion.peaks[i]) * size.height
+                    if peak > 0.5 { g.fill(Path(CGRect(x: x, y: max(0, size.height - peak - 1), width: barWidth, height: 1)), with: .color(palette.displayHighlight.opacity(0.85))) }
+                }
+                let nowSettled = !active && motion.isIdle
+                if nowSettled != settled { DispatchQueue.main.async { settled = nowSettled } }
+            }
+        }.frame(width: CGFloat(Spectrum.bands) * (barWidth + 1) - 1, height: height)
     }
 }
 struct VolumeRow: View {
