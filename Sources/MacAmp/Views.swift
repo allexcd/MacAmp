@@ -15,9 +15,23 @@ struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ nsView: DragView, context: Context) {}
 }
+/// Drag area that is left out when rendering a preview image (AppKit views can't be captured).
+struct DragHandle: View {
+    @Environment(\.renderingPreview) private var preview
+    var body: some View { if !preview { WindowDragArea() } }
+}
+private struct RenderingPreviewKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var renderingPreview: Bool {
+        get { self[RenderingPreviewKey.self] }
+        set { self[RenderingPreviewKey.self] = newValue }
+    }
+}
 struct Chrome<Content: View>: View {
     var title: String
     var close: () -> Void
+    /// Image slot for this window's background ("player", "playlist", …; falls back to "panel").
+    var slot = "panel"
     @ViewBuilder var content: Content
     @Environment(\.palette) private var palette
     var body: some View {
@@ -25,17 +39,18 @@ struct Chrome<Content: View>: View {
             HStack(spacing: 4) {
                 HStack(spacing: 4) {
                     Rectangle().fill(palette.border).frame(height: 1)
-                    Text(title).font(.system(size: 8, weight: .bold, design: .monospaced)).fixedSize()
+                    Text(title).font(palette.font("ui", 8, .bold)).fixedSize()
                     Rectangle().fill(palette.border).frame(height: 1)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(WindowDragArea().accessibilityLabel("Drag window"))
+                    .overlay(DragHandle().accessibilityLabel("Drag window"))
                 Button("×", action: close).buttonStyle(RetroButton()).accessibilityLabel("Close \(title)")
             }.frame(height: 11)
             content
         }.padding(5)
         // Fill the whole window so nothing behind it shows through at the edges.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(palette.panel)
-        .overlay(Rectangle().strokeBorder(palette.border, lineWidth: 1))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(palette.surface(slot, palette.panel))
+        .clipShape(RoundedRectangle(cornerRadius: palette.windowCorner))
+        .overlay(RoundedRectangle(cornerRadius: palette.windowCorner).strokeBorder(palette.border, lineWidth: 1))
         .foregroundStyle(palette.text)
     }
 }
@@ -45,9 +60,10 @@ struct RetroButton: ButtonStyle {
         let configuration: ButtonStyleConfiguration
         @Environment(\.palette) private var palette
         var body: some View {
-            configuration.label.font(.system(size: 8, weight: .bold, design: .monospaced)).padding(.horizontal, 4).frame(minHeight: 12)
-                .background(palette.button(pressed: configuration.isPressed))
-                .overlay(Rectangle().stroke(Color.black, lineWidth: 0.7)).foregroundStyle(palette.buttonText)
+            configuration.label.font(palette.font("ui", 8, .bold)).padding(.horizontal, 4).frame(minHeight: 12)
+                .background(palette.surface(configuration.isPressed ? "buttonPressed" : "button", palette.button(pressed: configuration.isPressed)))
+                .clipShape(RoundedRectangle(cornerRadius: palette.buttonCorner))
+                .overlay(RoundedRectangle(cornerRadius: palette.buttonCorner).stroke(Color.black, lineWidth: 0.7)).foregroundStyle(palette.buttonText)
         }
     }
 }
@@ -87,7 +103,7 @@ struct Ticker: View {
             // Only animate while playing and when the title is too long to fit.
             TimelineView(.animation(minimumInterval: 0.05, paused: travel == 0 || !running)) { context in
                 let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: max(1, Double(travel / 16 + 4)))
-                Text(text).font(.system(size: 9, design: .monospaced)).fixedSize().offset(x: running ? -min(travel, max(0, phase - 2) * 16) : 0)
+                Text(text).font(palette.font("display", 9)).fixedSize().offset(x: running ? -min(travel, max(0, phase - 2) * 16) : 0)
             }
         }.frame(height: 12).clipped().foregroundStyle(palette.display)
     }
@@ -100,7 +116,18 @@ struct PlayerView: View {
     var windows: Windows
     @Environment(\.palette) private var palette
     var body: some View {
-        Chrome(title: "Mac-Amp", close: { NSApp.hide(nil) }) {
+        Group {
+            if let layout = palette.layout {
+                LayoutCanvas(layout: layout, state: layoutState)
+            } else {
+                builtInFace
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil, perform: receive)
+        .alert("Mac-Amp", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) { Button("OK") { model.message = nil } } message: { Text(model.message ?? "") }
+    }
+    private var builtInFace: some View {
+        Chrome(title: "Mac-Amp", close: { NSApp.hide(nil) }, slot: "player") {
             if palette.face == .cassette {
                 CassetteFace(model: model, live: live, windows: windows)
             } else {
@@ -109,20 +136,70 @@ struct PlayerView: View {
             RetroSlider(value: Binding(get: { min(live.position, max(1, live.duration)) }, set: { model.seek($0) }), range: 0...max(1, live.duration)).controlSize(.mini).frame(height: 10).accessibilityLabel("Playback position")
             TransportRow(model: model)
         }.frame(width: 275, height: Windows.playerHeight(palette.face))
-        .onDrop(of: [.fileURL], isTargeted: nil, perform: receive)
-        .alert("Mac-Amp", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) { Button("OK") { model.message = nil } } message: { Text(model.message ?? "") }
+    }
+    /// Live values and actions for layout skins.
+    private var layoutState: LayoutState {
+        let track = model.current
+        let parts = track?.title.components(separatedBy: " — ") ?? []
+        let index = model.session.tracks.firstIndex { $0.id == model.session.selected }
+        let progress = live.duration > 0 ? min(1, live.position / live.duration) : 0
+        let status = live.playing ? "PLAY" : (model.isLoaded ? "PAUSE" : "STOP")
+        let repeatValue: Double = switch model.session.repeatMode { case .off: 0; case .all: 0.5; case .one: 1 }
+        return LayoutState(
+            values: ["progress": progress, "playing": live.playing ? 1 : 0, "paused": model.isLoaded && !live.playing ? 1 : 0,
+                     "stopped": model.isLoaded ? 0 : 1, "volume": Double(model.session.volume), "balance": Double(model.session.balance + 1) / 2,
+                     "shuffle": model.session.shuffle ? 1 : 0, "repeat": repeatValue, "remaining": model.remaining ? 1 : 0],
+            text: ["time": (model.remaining ? "−" : "") + clock(model.remaining ? live.duration - live.position : live.position),
+                   "elapsed": clock(live.position), "remaining": clock(live.duration - live.position), "duration": clock(live.duration),
+                   "title": track?.title ?? "DROP YOUR MUSIC HERE", "artist": parts.count > 1 ? parts[0] : "",
+                   "song": parts.count > 1 ? parts.dropFirst().joined(separator: " — ") : (track?.title ?? "Mac-Amp"),
+                   "format": track?.url.pathExtension.uppercased() ?? "—", "status": status,
+                   "track": index.map { "\($0 + 1)" } ?? "–", "count": "\(model.session.tracks.count)",
+                   "shuffle": model.session.shuffle ? "SHUF ●" : "SHUF", "repeat": "R:\(model.session.repeatMode.rawValue.uppercased())",
+                   "volume": "\(Int(model.session.volume * 100))%", "skin": palette.name.uppercased()],
+            playing: live.playing, stopped: !model.isLoaded, position: live.position, positionDate: live.positionDate, live: live,
+            spectrum: model.spectrumNow,
+            setValue: { bind, value in
+                switch bind {
+                case "volume": model.session.volume = Float(value); model.changed()
+                case "balance": model.session.balance = Float(value * 2 - 1); model.changed()
+                case "position": model.seek(value * max(1, live.duration))
+                default: break
+                }
+            },
+            perform: { action in
+                switch action {
+                case "playPause": model.toggle()
+                case "play": if !live.playing { model.toggle() }
+                case "pause": model.pause()
+                case "stop": model.stop()
+                case "next": model.advance()
+                case "previous": model.advance(backwards: true)
+                case "add": model.choose()
+                case "shuffle": model.toggleShuffle()
+                case "repeat": model.cycleRepeat()
+                case "equalizer": windows.toggle(.equalizer)
+                case "playlist": windows.toggle(.playlist)
+                case "skins": windows.toggle(.skins)
+                case "find": (NSApp.delegate as? AppDelegate)?.find()
+                case "toggleTime": model.remaining.toggle()
+                case "hide": NSApp.hide(nil)
+                case "minimize": windows.panels[.player]?.miniaturize(nil)
+                default: break
+                }
+            }, preview: model.isPreview)
     }
     private var classicDisplay: some View {
         HStack(spacing: 5) {
             VStack(spacing: 1) {
                 Button { model.remaining.toggle() } label: {
-                    Text((model.remaining ? "−" : "") + clock(model.remaining ? live.duration - live.position : live.position)).font(.system(size: 23, weight: .regular, design: .monospaced)).foregroundStyle(palette.display)
+                    Text((model.remaining ? "−" : "") + clock(model.remaining ? live.duration - live.position : live.position)).font(palette.font("display", 23, .regular)).foregroundStyle(palette.display)
                 }.buttonStyle(.plain).accessibilityLabel("Toggle elapsed or remaining time")
                 SpectrumBars(source: model.spectrumNow, active: live.playing, barWidth: 4, height: 18)
-            }.frame(width: 104).background(palette.displayBackground)
+            }.frame(width: 104).background(palette.surface("display", palette.displayBackground))
             VStack(spacing: 2) {
                 Ticker(text: model.current?.title ?? "DROP YOUR MUSIC HERE • Mac-Amp", running: live.playing)
-                HStack { Text(model.current?.url.pathExtension.uppercased() ?? "LOCAL AUDIO"); Spacer(); Text(live.playing ? "STEREO ▶" : "READY") }.font(.system(size: 7, design: .monospaced)).foregroundStyle(palette.display).padding(2).background(palette.displayBackground)
+                HStack { Text(model.current?.url.pathExtension.uppercased() ?? "LOCAL AUDIO"); Spacer(); Text(live.playing ? "STEREO ▶" : "READY") }.font(palette.font("display", 7)).foregroundStyle(palette.display).padding(2).background(palette.surface("display", palette.displayBackground))
                 VolumeRow(model: model)
                 PanelButtons(model: model, windows: windows)
             }
@@ -164,6 +241,10 @@ struct SpectrumBars: View {
     var active: Bool
     var barWidth: CGFloat
     var height: CGFloat
+    var gap: CGFloat = 1
+    var showPeaks = true
+    var colors: [Color]? = nil      // top → bottom; defaults to the skin's spectrum colors
+    var peakColor: Color? = nil
     @State private var motion = SpectrumMotion()
     @State private var settled = true
     @Environment(\.palette) private var palette
@@ -172,18 +253,18 @@ struct SpectrumBars: View {
         TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !active && settled)) { context in
             Canvas { g, size in
                 motion.step(to: active ? source() : [], at: context.date.timeIntervalSinceReferenceDate)
-                let fill = GraphicsContext.Shading.linearGradient(Gradient(colors: [palette["spectrumHigh"], palette["spectrumMid"], palette.display]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height))
+                let fill = GraphicsContext.Shading.linearGradient(Gradient(colors: colors ?? [palette["spectrumHigh"], palette["spectrumMid"], palette.display]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height))
                 for i in motion.levels.indices {
-                    let x = CGFloat(i) * (barWidth + 1)
+                    let x = CGFloat(i) * (barWidth + gap)
                     let bar = CGFloat(motion.levels[i]) * size.height
                     if bar > 0.5 { g.fill(Path(CGRect(x: x, y: size.height - bar, width: barWidth, height: bar)), with: fill) }
                     let peak = CGFloat(motion.peaks[i]) * size.height
-                    if peak > 0.5 { g.fill(Path(CGRect(x: x, y: max(0, size.height - peak - 1), width: barWidth, height: 1)), with: .color(palette.displayHighlight.opacity(0.85))) }
+                    if showPeaks, peak > 0.5 { g.fill(Path(CGRect(x: x, y: max(0, size.height - peak - 1), width: barWidth, height: 1)), with: .color(peakColor ?? palette.displayHighlight.opacity(0.85))) }
                 }
                 let nowSettled = !active && motion.isIdle
                 if nowSettled != settled { DispatchQueue.main.async { settled = nowSettled } }
             }
-        }.frame(width: CGFloat(Spectrum.bands) * (barWidth + 1) - 1, height: height)
+        }.frame(width: CGFloat(Spectrum.bands) * (barWidth + gap) - gap, height: height)
     }
 }
 struct VolumeRow: View {
@@ -230,6 +311,22 @@ struct PlaylistView: View {
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     @Environment(\.palette) private var palette
+    @Environment(\.renderingPreview) private var preview
+    private var previewRows: some View {
+        VStack(spacing: 0) {
+            ForEach(rows.prefix(12), id: \.track.id) { row in
+                let isCurrent = row.track.id == model.session.selected
+                HStack(spacing: 3) {
+                    Text(isCurrent ? "▶" : " ").foregroundStyle(palette.display).frame(width: 7)
+                    Text(String(format: "%02d.", row.index + 1)).foregroundStyle(palette.displayDim)
+                    Text(row.track.title).foregroundStyle(isCurrent ? palette.displayHighlight : palette.display).fontWeight(isCurrent ? .bold : .regular).lineLimit(1)
+                    Spacer(minLength: 0); Text("MP3").foregroundStyle(palette.displayDim)
+                }.font(palette.font("display", 9)).padding(.horizontal, 6).frame(height: 17)
+                .background(isCurrent ? palette.playingRow : .clear)
+            }
+            Spacer(minLength: 0)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(palette.surface("display", palette.displayBackground))
+    }
 
     /// Tracks with their original position; filtered by every word typed in the search field.
     private var rows: [(index: Int, track: Track)] {
@@ -239,22 +336,25 @@ struct PlaylistView: View {
         return all.filter { row in let title = row.track.title.lowercased(); return words.allSatisfy { title.contains($0) } }
     }
     var body: some View {
-        Chrome(title: "Mac-Amp • PLAYLIST", close: { windows.toggle(.playlist) }) {
+        Chrome(title: "Mac-Amp • PLAYLIST", close: { windows.toggle(.playlist) }, slot: "playlist") {
             ScrollViewReader { scroller in
                 if searching {
                     HStack(spacing: 3) {
-                        Text("FIND").font(.system(size: 8, weight: .bold, design: .monospaced)).foregroundStyle(palette.display)
+                        Text("FIND").font(palette.font("display", 8, .bold)).foregroundStyle(palette.display)
                         TextField("", text: $query, prompt: Text("type a title or artist").foregroundStyle(palette.displayDim))
-                            .textFieldStyle(.plain).font(.system(size: 9, design: .monospaced)).foregroundStyle(palette.displayHighlight)
+                            .textFieldStyle(.plain).font(palette.font("display", 9)).foregroundStyle(palette.displayHighlight)
                             .focused($searchFocused)
                             .onAppear { focusSearch() }
                             .onSubmit { if let first = rows.first { model.play(first.track.id); closeSearch(scroller) } }
                             .onExitCommand { closeSearch(scroller) }
                             .accessibilityLabel("Search playlist")
-                        Text("\(rows.count)").font(.system(size: 8, design: .monospaced)).foregroundStyle(palette.displayDim)
+                        Text("\(rows.count)").font(palette.font("display", 8)).foregroundStyle(palette.displayDim)
                         Button("×") { closeSearch(scroller) }.buttonStyle(RetroButton()).accessibilityLabel("Close search")
-                    }.padding(.horizontal, 3).frame(height: 14).background(palette.displayBackground)
+                    }.padding(.horizontal, 3).frame(height: 14).background(palette.surface("display", palette.displayBackground))
                 }
+                if preview {
+                    previewRows   // the AppKit-backed List can't be captured in a preview image
+                } else {
                 List(selection: $selection) {
                     ForEach(rows, id: \.track.id) { row in
                         let track = row.track
@@ -264,8 +364,8 @@ struct PlaylistView: View {
                             Text(String(format: "%02d.", row.index + 1)).foregroundStyle(palette.displayDim)
                             Text(track.title).foregroundStyle(isCurrent ? palette.displayHighlight : palette.display).fontWeight(isCurrent ? .bold : .regular).lineLimit(1)
                             Spacer(minLength: 0); Text(track.url.pathExtension.uppercased()).foregroundStyle(palette.displayDim)
-                        }.font(.system(size: 9, design: .monospaced)).padding(.vertical, 2).tag(track.id)
-                        .listRowBackground(isCurrent ? palette.playingRow : palette.displayBackground)
+                        }.font(palette.font("display", 9)).padding(.vertical, 2).tag(track.id)
+                        .listRowBackground(isCurrent ? palette.playingRow : palette.hasImage("display") ? Color.clear : palette.displayBackground)
                         .onAppear { visible.insert(track.id) }.onDisappear { visible.remove(track.id) }
                         .onTapGesture(count: 2) { model.play(track.id) }
                         .onDrag { NSItemProvider(object: track.id.uuidString as NSString) }
@@ -283,7 +383,7 @@ struct PlaylistView: View {
                     }
                     // Offsets only match the full list, so reordering is off while filtering.
                     .onMove(perform: query.isEmpty ? { source, target in model.session.tracks.move(fromOffsets: source, toOffset: target); model.save() } : nil)
-                }.listStyle(.plain).scrollContentBackground(.hidden).background(palette.displayBackground).environment(\.defaultMinListRowHeight, 17)
+                }.listStyle(.plain).scrollContentBackground(.hidden).background(palette.surface("display", palette.displayBackground)).environment(\.defaultMinListRowHeight, 17)
                     .onDeleteCommand { model.remove(selection); selection.removeAll() }
                     .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                         for provider in providers { _ = provider.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in model.add([url]) } } } }; return true
@@ -295,12 +395,13 @@ struct PlaylistView: View {
                     }
                     .onChange(of: model.searchToken) { if searching { focusSearch() } else { searching = true } }
                     .onAppear { if let id = model.session.selected { scroller.scrollTo(id, anchor: .center) } }
+                }
             }
             HStack(spacing: 3) {
                 Button("+ ADD") { model.choose() }; Button("− REM") { model.remove(selection); selection.removeAll() }
                 Button("CLEAR") { model.remove(Set(model.session.tracks.map(\.id))) }
                 Button("FIND") { model.findInPlaylist() }.accessibilityLabel("Search playlist")
-                Spacer(); Text(model.importing ? "READING…" : "\(model.session.tracks.count) TRACKS").font(.system(size: 8, design: .monospaced)).foregroundStyle(palette.panelAccent)
+                Spacer(); Text(model.importing ? "READING…" : "\(model.session.tracks.count) TRACKS").font(palette.font("ui", 8)).foregroundStyle(palette.panelAccent)
             }.buttonStyle(RetroButton())
         }.frame(width: 275, height: 245)
     }
@@ -322,11 +423,11 @@ struct EqualizerView: View {
     let labels = ["31","62","125","250","500","1K","2K","4K","8K","16K"]
     @Environment(\.palette) private var palette
     var body: some View {
-        Chrome(title: "Mac-Amp • EQUALIZER", close: { windows.toggle(.equalizer) }) {
+        Chrome(title: "Mac-Amp • EQUALIZER", close: { windows.toggle(.equalizer) }, slot: "equalizer") {
             HStack {
                 Button(model.session.eqEnabled ? "ON ●" : "OFF") { model.session.eqEnabled.toggle(); model.changed() }
                 Button("FLAT") { model.session.bands = Array(repeating: 0, count: 10); model.session.preamp = 0; model.changed() }
-                Spacer(); Text("±12 dB").font(.system(size: 7, design: .monospaced)).foregroundStyle(palette.panelAccent)
+                Spacer(); Text("±12 dB").font(palette.font("ui", 7)).foregroundStyle(palette.panelAccent)
             }.buttonStyle(RetroButton())
             HStack(spacing: 2) {
                 fader("PRE", value: $model.session.preamp).help("Preamp automatically reserves headroom for EQ boosts. Applied gain: \(Int(model.session.safePreamp)) dB")
@@ -337,7 +438,7 @@ struct EqualizerView: View {
     }
     func fader(_ name: String, value: Binding<Float>) -> some View {
         VStack(spacing: 0) {
-            Text(String(format: "%.0f", value.wrappedValue)).font(.system(size: 6, design: .monospaced)).foregroundStyle(palette.panelAccent)
+            Text(String(format: "%.0f", value.wrappedValue)).font(palette.font("ui", 6)).foregroundStyle(palette.panelAccent)
             GeometryReader { proxy in
                 ZStack {
                     Rectangle().fill(palette.displayBackground).frame(width: 3)
@@ -347,7 +448,7 @@ struct EqualizerView: View {
                 .gesture(DragGesture(minimumDistance: 0).onChanged { event in value.wrappedValue = Float(max(-12, min(12, (0.5 - event.location.y / proxy.size.height) * 24))); model.changed() })
             }.accessibilityElement().accessibilityLabel("\(name) gain").accessibilityValue("\(Int(value.wrappedValue)) decibels")
                 .accessibilityAdjustableAction { direction in value.wrappedValue = max(-12,min(12,value.wrappedValue + (direction == .increment ? 1 : -1))); model.changed() }
-            Text(name).font(.system(size: 6, design: .monospaced))
+            Text(name).font(palette.font("ui", 6))
         }.frame(maxWidth: .infinity)
     }
 }

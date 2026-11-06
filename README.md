@@ -33,7 +33,7 @@ Mac-Amp plays your local music files: no accounts, no streaming, no library impo
 - **Ten-band equalizer** (31 Hz–16 kHz) with preamp and automatic headroom, plus volume and balance.
 - **Playlist** with drag-to-reorder, search (⌘F or J), shuffle without repeats, repeat off/all/one, and auto-scroll to the playing track.
 - **Media keys and Control Center**: play/pause, next, previous and scrubbing from the keyboard or the Now Playing widget.
-- **Skins**: Classic and a Cassette Deck skin whose tape reels turn while playing and wind from spool to spool as the song progresses. Make your own with a small JSON file.
+- **Skins that can look like anything**: recolor in a few lines, add textures, fonts and artwork, or design a completely new player in JSON with parts that move to the music (spinning records, tonearms, VU needles). Built in: Classic, an animated Cassette Deck, and a Turntable. There's also an [AI skill](skills/mac-amp-skins/SKILL.md) for building skins with an LLM.
 - **Picks up where you left off**: queue, position, EQ, volume, skin and window layout are restored at launch, without auto-playing.
 - **Private and light**: sandboxed with read-only access to the files you choose; uses about 0.2% CPU when idle.
 
@@ -131,68 +131,82 @@ Window positions are stored in the app's preferences. Delete the `MacAmp` folder
 
 ## Skins
 
-<img src="docs/skins-panel.png" width="320" align="right" alt="Skins panel">
+<p align="center">
+  <img src="docs/turntable.png" width="275" alt="Turntable skin">
+  <img src="docs/vu-radio.png" width="300" alt="VU Radio example skin">
+  <img src="docs/walnut.png" width="275" alt="Walnut Turntable example skin">
+  <img src="docs/midnight-tape.png" width="275" alt="Midnight Tape example skin">
+</p>
 
-Open the Skins panel with **SK** on the player (or **⌘K**) and click a skin to switch.
+Open the Skins panel with **SK** on the player (or **⌘K**) and click a skin to switch. Built in:
 
-Two skins are built in:
+- **Classic**: gunmetal panels and a green phosphor display.
+- **Cassette Deck**: a silver 70s tape deck. The label shows the song title in handwriting, and the reels turn and wind from spool to spool as the song plays.
+- **Turntable**: a walnut record player. The record spins at 33⅓ rpm and the tonearm tracks across it as the song progresses. It's drawn entirely from a JSON layout, the same format your own skins use.
 
-- **Classic**: gunmetal panels and green phosphor display.
-- **Cassette Deck**: a silver 70s tape deck with an amber counter. The cassette label shows the song title in handwriting, and the reels turn at a realistic speed as the tape winds across.
+Press **FOLDER** in the Skins panel to open your skins folder. That also installs three examples: **VU Radio** (a receiver with VU needles that follow the music, a tuning dial you drag to seek, and a spinning knob), **Walnut Turntable** (wood textures, printed label art and different fonts) and **Midnight Tape** (colors only).
 
 ### Make your own
 
-1. In the Skins panel, press **FOLDER**. This opens your skins folder and creates `README.txt` and `Example.json` there.
-2. Copy `Example.json`, give it a new `"name"`, and change any colors.
-3. Press **RELOAD** in the panel, then click your skin.
+A skin is JSON. It can be a single `.json` file, or a folder with `skin.json` plus its images and fonts. Anything you leave out comes from the skin named in `basedOn`, then from Classic, so you only write what changes. There are three levels:
 
-A skin is a JSON file. Colors are `#RRGGBB` or `#RRGGBBAA` (with transparency):
+**1. Recolor** an existing design:
 
 ```json
-{
-  "name": "Midnight Tape",
-  "face": "cassette",
-  "basedOn": "cassette",
-  "colors": {
-    "display": "#6FD3FF",
-    "displayBackground": "#05080C",
-    "panelTop": "#3A3F47",
-    "panelMid": "#15171B",
-    "panelBottom": "#2B2F36",
-    "cassetteShell": "#3F9BDDB8",
-    "cassetteStripe1": "#2E5BFF",
-    "cassetteStripe2": "#B23CFF"
-  }
-}
+{ "name": "Ice", "basedOn": "cassette",
+  "colors": { "display": "#7FD0FF", "cassetteShell": "#BFE6FFB0", "panelTop": "#DCE9F2" } }
 ```
 
-- `face` picks the player layout: `classic` or `cassette`.
-- `basedOn` (optional) names a skin to inherit from. Any color you leave out comes from it, then from Classic, so a skin can be just a few lines.
-- Broken files are skipped, so a typo never breaks the app.
+**2. Add images, fonts and shape options** (folder skins):
 
-<details>
-<summary><b>All color tokens</b></summary>
+```json
+{ "name": "Walnut", "basedOn": "turntable",
+  "images": { "panel": { "file": "wood.png", "mode": "tile" }, "recordLabel": "label.png" },
+  "fonts": { "display": "Menlo", "label": "Futura" },
+  "shape": { "windowCorner": 12, "buttonCorner": 5 } }
+```
 
-| Token | Paints |
-|---|---|
-| `display` | LCD text, spectrum base, playlist titles |
-| `displayBackground` | LCD, playlist and slider backgrounds |
-| `displayDim` | secondary LCD text (track numbers, formats) |
-| `displayHighlight` | the playing track's title, peak markers |
-| `playingRow` | background of the playing playlist row |
-| `panelTop`, `panelMid`, `panelBottom` | window body gradient |
-| `border` | window outline and title-bar lines |
-| `text` | window titles and labels |
-| `panelAccent` | highlighted labels on the window body (EQ values, track count) |
-| `buttonTop`, `buttonBottom`, `buttonPressed`, `buttonText` | buttons |
-| `sliderFillStart`, `sliderFillEnd`, `knob` | sliders and faders |
-| `spectrumHigh`, `spectrumMid` | spectrum bar colors (top, middle) |
-| `cassetteShell`, `cassetteLabel`, `cassetteStripe1`, `cassetteStripe2`, `cassetteInk` | cassette body, label, stripes, handwriting |
-| `tape`, `reel`, `deck` | tape packs, reel hubs, tape-well background |
+**3. Design a whole new player** with a `layout`: a size plus a list of elements (rectangles, ellipses, images, text, a spectrum, buttons, sliders, drag areas and groups). Any number can follow playback, so parts can spin, swing or light up:
 
-</details>
+```json
+"layout": { "size": [300, 156], "elements": [
+  { "type": "rect", "frame": [0, 0, 300, 156], "corner": 10, "fill": "panelMid" },
+  { "type": "dragArea", "frame": [0, 0, 280, 18] },
+  { "type": "group", "frame": [12, 20, 110, 66], "pivot": [55, 76],
+    "rotation": { "bind": "level", "from": -42, "to": 40 },
+    "children": [ { "type": "rect", "frame": [54, 10, 2, 56], "fill": "#1B1B1B" } ] },
+  { "type": "text", "frame": [180, 101, 54, 11], "text": "{time}", "font": "display" },
+  { "type": "button", "frame": [38, 129, 24, 16], "action": "playPause", "label": "▶" } ] }
+```
 
-<br clear="right">
+After editing, press **RELOAD** in the Skins panel.
+
+### Check and preview skins without opening the app
+
+The app's executable doubles as a skin tool:
+
+```bash
+MacAmp --validate-skin "My Skin"
+```
+
+```bash
+MacAmp --render-skin "My Skin" --window all --state playing --progress 0.4
+```
+
+```bash
+MacAmp --skin-reference
+```
+
+`--validate-skin` explains each problem with its exact location, `--render-skin` writes a preview image, and `--skin-reference` prints every color, image slot, font role, element type, binding, placeholder and action.
+
+`MacAmp` here is `/Applications/MacAmp.app/Contents/MacOS/MacAmp`, or `swift run MacAmp` in a source checkout. The installed app is sandboxed, so it can only read skins in its own Skins folder: `~/Library/Containers/dev.macamp.prototype/Data/Library/Application Support/MacAmp/Skins`.
+
+### Build skins with an AI assistant
+
+[`skills/mac-amp-skins`](skills/mac-amp-skins) is a skill that teaches an LLM to design Mac-Amp skins: a workflow (brief → JSON and images → validate → preview → iterate), recipes for common effects, working examples, and a full [reference](skills/mac-amp-skins/reference.md) generated from the code.
+
+- **Claude Code:** copy the folder to `~/.claude/skills/`, then ask something like "make me a Mac-Amp skin that looks like a 1980s boombox".
+- **Other assistants:** give them `SKILL.md` and `reference.md`.
 
 ## Development
 
@@ -204,6 +218,8 @@ Sources/
     Session.swift        Saved state, queue, shuffle/repeat decisions, JSON persistence
     WindowDocking.swift  Snapping and "which windows are attached" math
     Skin.swift           Skin format, built-in skins, loading and inheritance
+    SkinLayout.swift     Layout format (elements, paints, bindings) and the skin validator
+    BuiltInLayouts.swift The Turntable, written in the layout JSON format
   MacAmp/              The app
     App.swift            Windows (creation, dragging, docking), menus, app delegate
     Model.swift          Observable app state, playback control, import, Now Playing
@@ -211,7 +227,10 @@ Sources/
     Views.swift          Player, playlist and equalizer views, shared controls
     Cassette.swift       The cassette player face and its animated tape
     SkinsPanel.swift     The Skins window
-    Theme.swift          Turns a skin into SwiftUI colors (the "palette")
+    Layout.swift         Draws layout skins: elements, live bindings, actions, sliders
+    SkinTool.swift       --validate-skin, --render-skin and --skin-reference
+    Theme.swift          Turns a skin into SwiftUI colors, images, fonts and shapes (the "palette")
+skills/mac-amp-skins/  AI skill for designing skins, its reference and example skins
 Tests/                 Unit and playback tests
 scripts/               Build, packaging, fixtures, project and icon generation
 Config/                Info.plist, entitlements, app icon
@@ -222,7 +241,7 @@ Config/                Info.plist, entitlements, app icon
 - Each window is a borderless `NSWindow` hosting a SwiftUI view. `Windows` in `App.swift` moves windows itself on title-bar drags. That's what lets attached panels follow every mouse step and snap live.
 - `Model` is the single source of truth. Values that change many times a second (position, play state) live in a separate `LiveState` object that only the player watches, so the playlist and equalizer don't redraw on every tick.
 - `Playback` wraps SFBAudioEngine's `AudioPlayer`, inserts an `AVAudioUnitEQ`, and taps the output for the spectrum. Analysis runs off the main thread, and its frames are released in step with the audio so the bars animate smoothly at 60 fps.
-- Skins flow through the SwiftUI environment as a `Palette`; views ask it for colors by name instead of hard-coding them.
+- Skins flow through the SwiftUI environment as a `Palette`. Views ask it for colors, images and fonts by name instead of hard-coding them. A skin with a `layout` replaces the player's view with `LayoutCanvas`, which reads a `LayoutState` (bindings, text, actions) that doesn't depend on `Model`. That's how `--render-skin` can draw previews with sample data.
 
 ### Build and test from the command line
 
@@ -252,11 +271,12 @@ Playback tests briefly play quiet tones and need an audio output device; they an
 | `scripts/generate-project.py` | **You add or remove a source file.** The Xcode project lists files explicitly and is generated from the `Sources/` folders. |
 | `scripts/make-icon.swift` | Changing the app icon. It draws the icon in code and writes `Config/AppIcon.icns`: `swift scripts/make-icon.swift`. |
 | `scripts/generate-fixtures.sh` | Creating the test audio files. |
+| `scripts/make-example-assets.swift` | Regenerating the example skins' images (wood textures, record label). |
 
 ### Good first changes
 
-- **A new built-in skin**: add a `Skin` next to `Skin.cassette` in `Sources/MacAmpCore/Skin.swift` and include it in `Skin.builtIn`.
-- **A new player face**: add a case to `Skin.Face`, a view like `CassetteFace`, and a branch in `PlayerView`. Set its height in `Windows.playerHeight`.
+- **A new skin or player design**: try it as a JSON skin first (see [Skins](#skins)). Most designs need no Swift at all. To make one built in, add its layout to `BuiltInLayouts.swift` and a `Skin` to `Skin.builtIn`, as the Turntable does.
+- **A new layout element, binding or action**: add it to the lists in `SkinLayout.swift` (so the validator and reference know it), draw it in `LayoutRenderer`, then regenerate `skills/mac-amp-skins/reference.md` with `--skin-reference`. A test fails if you forget.
 - **A new window**: add a case to `Windows.Panel`, its size in `update(_:)`, and its view; docking and snapping come for free.
 
 ### Not done yet

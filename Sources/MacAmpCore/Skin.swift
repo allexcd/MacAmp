@@ -1,23 +1,83 @@
 import Foundation
 
-/// A skin is a named set of colors plus a player "face" (layout). Skins are JSON files:
+/// A skin is a JSON description of how Mac-Amp looks:
 ///
-///     { "name": "Midnight", "face": "classic", "basedOn": "classic",
-///       "colors": { "display": "#7FD0FF", "panelTop": "#20242C" } }
+///     { "name": "Walnut", "face": "turntable", "basedOn": "turntable",
+///       "colors": { "display": "#FFB238" },
+///       "images": { "panel": { "file": "wood.png", "mode": "tile" }, "recordLabel": "label.png" },
+///       "fonts":  { "display": "Menlo", "label": "MyHand.ttf" },
+///       "shape":  { "windowCorner": 8, "buttonCorner": 4 } }
 ///
-/// Any color left out falls back to the `basedOn` skin, then to Classic.
+/// It can be a single `.json` file, or a folder containing `skin.json` plus the images and font
+/// files it names. Anything left out falls back to the `basedOn` skin, then to Classic.
 public struct Skin: Codable, Equatable, Identifiable, Sendable {
-    public enum Face: String, Codable, Sendable { case classic, cassette }
-    /// "classic", "cassette", or "file:<name>.json" for skins in the Skins folder.
+    /// Built-in player designs written in Swift. A skin with a `layout` draws its own player instead.
+    public enum Face: String, Codable, Sendable, CaseIterable { case classic, cassette }
+
+    /// An image file, stretched to fill its slot or tiled at its natural size.
+    public struct ImageSpec: Codable, Equatable, Sendable {
+        public enum Mode: String, Codable, Sendable { case stretch, tile }
+        public var file: String
+        public var mode: Mode
+        public init(file: String, mode: Mode = .stretch) { self.file = file; self.mode = mode }
+        /// Accepts either `"wood.png"` or `{ "file": "wood.png", "mode": "tile" }`.
+        public init(from decoder: Decoder) throws {
+            if let file = try? decoder.singleValueContainer().decode(String.self) { self.init(file: file); return }
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(file: try container.decode(String.self, forKey: .file), mode: try container.decodeIfPresent(Mode.self, forKey: .mode) ?? .stretch)
+        }
+    }
+
+    /// Geometry options. Every field is optional so skins only set what they change.
+    public struct Shape: Codable, Equatable, Sendable {
+        public var windowCorner: Double?
+        public var buttonCorner: Double?
+        /// Cassette face: "wide" (one long window) or "twin" (two round windows).
+        public var cassetteWindow: String?
+        /// Cassette face: "teeth", "spokes" or "solid" reel hubs.
+        public var reels: String?
+        /// Cassette face: "stripes" or "plain" label.
+        public var label: String?
+        public init(windowCorner: Double? = nil, buttonCorner: Double? = nil, cassetteWindow: String? = nil, reels: String? = nil, label: String? = nil) {
+            self.windowCorner = windowCorner; self.buttonCorner = buttonCorner; self.cassetteWindow = cassetteWindow; self.reels = reels; self.label = label
+        }
+        /// Fields this shape leaves unset are taken from `parent`.
+        public func filled(from parent: Shape) -> Shape {
+            Shape(windowCorner: windowCorner ?? parent.windowCorner, buttonCorner: buttonCorner ?? parent.buttonCorner,
+                  cassetteWindow: cassetteWindow ?? parent.cassetteWindow, reels: reels ?? parent.reels, label: label ?? parent.label)
+        }
+    }
+
+    /// "classic", "cassette", "turntable", "file:<name>.json" or "folder:<name>" for user skins.
     public var id = ""
     public var name: String
     public var face: Face?
     public var basedOn: String?
     public var colors: [String: String]
-    enum CodingKeys: String, CodingKey { case name, face, basedOn, colors }
+    public var images: [String: ImageSpec]?
+    public var fonts: [String: String]?
+    public var shape: Shape?
+    /// A complete player design; overrides `face`. See SkinLayout.
+    public var layout: SkinLayout?
+    /// Where relative image and font file names are looked up (set when loading).
+    public var folder: URL?
+    enum CodingKeys: String, CodingKey { case name, face, basedOn, colors, images, fonts, shape, layout }
 
-    public init(id: String, name: String, face: Face? = nil, basedOn: String? = nil, colors: [String: String]) {
+    public init(id: String, name: String, face: Face? = nil, basedOn: String? = nil, colors: [String: String],
+                images: [String: ImageSpec]? = nil, fonts: [String: String]? = nil, shape: Shape? = nil, layout: SkinLayout? = nil) {
         self.id = id; self.name = name; self.face = face; self.basedOn = basedOn; self.colors = colors
+        self.images = images; self.fonts = fonts; self.shape = shape; self.layout = layout
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        face = try c.decodeIfPresent(Face.self, forKey: .face)
+        basedOn = try c.decodeIfPresent(String.self, forKey: .basedOn)
+        colors = try c.decodeIfPresent([String: String].self, forKey: .colors) ?? [:]
+        images = try c.decodeIfPresent([String: ImageSpec].self, forKey: .images)
+        fonts = try c.decodeIfPresent([String: String].self, forKey: .fonts)
+        shape = try c.decodeIfPresent(Shape.self, forKey: .shape)
+        layout = try c.decodeIfPresent(SkinLayout.self, forKey: .layout)
     }
 
     /// Every color a skin can set, with what it paints.
@@ -25,7 +85,7 @@ public struct Skin: Codable, Equatable, Identifiable, Sendable {
         ("display", "LCD text, spectrum base, playlist titles"),
         ("displayBackground", "LCD, playlist and slider backgrounds"),
         ("displayDim", "secondary LCD text (track numbers, formats)"),
-        ("displayHighlight", "the playing track's title"),
+        ("displayHighlight", "the playing track's title, peak markers"),
         ("playingRow", "background of the playing playlist row"),
         ("panelTop", "window gradient, top-left"),
         ("panelMid", "window gradient, middle"),
@@ -46,10 +106,33 @@ public struct Skin: Codable, Equatable, Identifiable, Sendable {
         ("cassetteLabel", "cassette label (cassette face)"),
         ("cassetteStripe1", "label stripe (cassette face)"),
         ("cassetteStripe2", "label stripe (cassette face)"),
-        ("cassetteInk", "handwriting on the label (cassette face)"),
+        ("cassetteInk", "handwriting on the label (cassette and turntable faces)"),
         ("tape", "tape ribbon and reel packs (cassette face)"),
-        ("reel", "reel hubs (cassette face)"),
-        ("deck", "tape-well background behind the cassette (cassette face)")
+        ("reel", "reel hubs (cassette face), spindle (turntable face)"),
+        ("deck", "background of the cassette well / turntable plinth"),
+        ("vinyl", "the record (turntable face)"),
+        ("recordLabel", "the record's center label (turntable face)"),
+        ("tonearm", "tonearm and platter rim (turntable face)")
+    ]
+    /// Image slots a skin can fill. Window slots fall back to "panel".
+    public static let imageSlots: [(name: String, use: String)] = [
+        ("panel", "background of every window"),
+        ("player", "player window background (overrides panel)"),
+        ("playlist", "playlist window background (overrides panel)"),
+        ("equalizer", "equalizer window background (overrides panel)"),
+        ("skins", "skins window background (overrides panel)"),
+        ("display", "LCD areas, playlist and lists"),
+        ("button", "buttons"),
+        ("buttonPressed", "buttons while pressed"),
+        ("deck", "cassette well / turntable plinth"),
+        ("cassetteLabel", "artwork printed on the cassette label"),
+        ("recordLabel", "artwork on the record's center label (spins with it)")
+    ]
+    /// Font roles. Values are an installed font's name, or a .ttf/.otf file in the skin's folder.
+    public static let fontRoles: [(name: String, use: String)] = [
+        ("display", "time, LCD text and the playlist"),
+        ("ui", "window titles, buttons and labels"),
+        ("label", "handwriting on the cassette / record label")
     ]
 
     public static let classic = Skin(id: "classic", name: "Classic", face: .classic, colors: [
@@ -59,7 +142,8 @@ public struct Skin: Codable, Equatable, Identifiable, Sendable {
         "buttonPressed": "#000000", "buttonText": "#FFFFFF", "sliderFillStart": "#408C33", "sliderFillEnd": "#FFFF00",
         "knob": "#D9D9D9", "spectrumHigh": "#FF0000", "spectrumMid": "#FFFF00",
         "cassetteShell": "#2A2A2E", "cassetteLabel": "#EDE6D3", "cassetteStripe1": "#E07A1F", "cassetteStripe2": "#C0392B",
-        "cassetteInk": "#1F2A6B", "tape": "#3B2416", "reel": "#F2F2F2", "deck": "#111111"
+        "cassetteInk": "#1F2A6B", "tape": "#3B2416", "reel": "#F2F2F2", "deck": "#111111",
+        "vinyl": "#121212", "recordLabel": "#C2412D", "tonearm": "#D6D6D2"
     ])
 
     /// A 70s silver tape deck: brushed aluminium, amber counter, smoked cassette with a cream label.
@@ -73,38 +157,80 @@ public struct Skin: Codable, Equatable, Identifiable, Sendable {
         "cassetteInk": "#22306E", "tape": "#3A2213", "reel": "#F4F4F0", "deck": "#121110"
     ])
 
-    public static let builtIn = [classic, cassette]
+    /// A walnut record player, drawn entirely by a JSON layout (BuiltInLayouts.turntable).
+    public static let turntable = Skin(id: "turntable", name: "Turntable", basedOn: "classic", colors: [
+        "display": "#F3E3C3", "displayBackground": "#15100C", "displayDim": "#8F7B62", "displayHighlight": "#FFFFFF",
+        "playingRow": "#4A2E1A", "panelTop": "#6B4426", "panelMid": "#3F2614", "panelBottom": "#5A381F",
+        "border": "#C9A27A", "text": "#F1E4CF", "panelAccent": "#F0C27B", "buttonTop": "#E9E4DA", "buttonBottom": "#A39C8F",
+        "buttonPressed": "#6F695F", "buttonText": "#1F1A14", "sliderFillStart": "#8A5A2B", "sliderFillEnd": "#F0C27B",
+        "knob": "#F4F1EA", "spectrumHigh": "#E8573A", "spectrumMid": "#F0C27B",
+        "cassetteInk": "#F7EBD3", "reel": "#D9D9D4", "deck": "#2A1A0F",
+        "vinyl": "#0F0F10", "recordLabel": "#B8352A", "tonearm": "#D6D6D2"
+    ], shape: Shape(windowCorner: 8, buttonCorner: 3),
+       layout: try! JSONDecoder().decode(SkinLayout.self, from: Data(BuiltInLayouts.turntable.utf8)))
+
+    public static let builtIn = [classic, cassette, turntable]
 }
 
 public enum SkinLibrary {
-    /// Built-in skins followed by valid JSON skins from `folder` (invalid files are skipped).
+    static let fontExtensions: Set<String> = ["ttf", "otf", "ttc"]
+
+    /// Built-in skins, then the Skins folder's `*.json` files and `*/skin.json` packages.
+    /// Files that don't parse are skipped.
     public static func all(in folder: URL?) -> [Skin] {
         var skins = Skin.builtIn
-        guard let folder, let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return skins }
-        for file in files.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) where file.pathExtension.lowercased() == "json" {
-            guard let data = try? Data(contentsOf: file), var skin = try? JSONDecoder().decode(Skin.self, from: data) else { continue }
-            skin.id = "file:" + file.lastPathComponent
+        guard let folder, let entries = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return skins }
+        for entry in entries.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) {
+            let isFolder = (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            let file = isFolder ? entry.appendingPathComponent("skin.json") : entry
+            guard isFolder || entry.pathExtension.lowercased() == "json",
+                  let data = try? Data(contentsOf: file), var skin = try? JSONDecoder().decode(Skin.self, from: data) else { continue }
+            skin.id = (isFolder ? "folder:" : "file:") + entry.lastPathComponent
+            skin.folder = isFolder ? entry : folder
             skins.append(skin)
         }
         return skins
     }
 
-    /// Flattens `basedOn` chains so every token has a value. Unknown ids fall back to Classic.
+    /// Flattens `basedOn` chains so every color has a value, and turns image and font file
+    /// names into absolute paths (relative to the skin that named them). Unknown ids fall back to Classic.
     public static func resolved(_ id: String?, in skins: [Skin]) -> Skin {
         var skin = skins.first { $0.id == id } ?? Skin.classic
-        var colors = skin.colors
-        var face = skin.face
+        var chain = [skin]
         var seen: Set<String> = [skin.id]
         var base = skin.basedOn
         while let next = base, !seen.contains(next), let parent = skins.first(where: { $0.id == next || $0.name == next }) {
-            seen.insert(parent.id)
-            colors.merge(parent.colors) { mine, _ in mine }
-            face = face ?? parent.face
-            base = parent.basedOn
+            seen.insert(parent.id); chain.append(parent); base = parent.basedOn
         }
-        colors.merge(Skin.classic.colors) { mine, _ in mine }
+        if !seen.contains(Skin.classic.id) { chain.append(Skin.classic) }
+        var colors: [String: String] = [:], images: [String: Skin.ImageSpec] = [:], fonts: [String: String] = [:]
+        var shape = Skin.Shape(), face: Skin.Face?, layout: SkinLayout?
+        for layer in chain {   // nearest first: keep the first value found for each key
+            colors.merge(layer.colors) { mine, _ in mine }
+            for (slot, spec) in layer.images ?? [:] where images[slot] == nil {
+                images[slot] = Skin.ImageSpec(file: absolute(spec.file, in: layer.folder), mode: spec.mode)
+            }
+            for (role, font) in layer.fonts ?? [:] where fonts[role] == nil {
+                fonts[role] = fontExtensions.contains((font as NSString).pathExtension.lowercased()) ? absolute(font, in: layer.folder) : font
+            }
+            shape = shape.filled(from: layer.shape ?? Skin.Shape())
+            face = face ?? layer.face
+            if layout == nil, let own = layer.layout { layout = own.absolutized(in: layer.folder) }
+        }
         skin.colors = colors; skin.face = face ?? .classic
+        skin.images = images.isEmpty ? nil : images; skin.fonts = fonts.isEmpty ? nil : fonts; skin.shape = shape
+        // A skin that picks a built-in face replaces an inherited layout.
+        skin.layout = (chain[0].layout == nil && chain[0].face != nil) ? nil : layout
         return skin
+    }
+
+    /// Relative names resolve inside `folder`; names that try to leave it are rejected (empty path).
+    static func absolute(_ file: String, in folder: URL?) -> String {
+        if file.hasPrefix("/") { return file }
+        guard let folder else { return "" }
+        let base = folder.resolvingSymlinksInPath().path
+        let url = URL(fileURLWithPath: base).appendingPathComponent(file).standardizedFileURL
+        return url.path.hasPrefix(base + "/") ? url.path : ""
     }
 
     /// Parses "#RRGGBB" or "#RRGGBBAA" into 0...1 components.
@@ -116,7 +242,7 @@ public enum SkinLibrary {
         return (Double(full >> 24 & 0xFF) / 255, Double(full >> 16 & 0xFF) / 255, Double(full >> 8 & 0xFF) / 255, Double(full & 0xFF) / 255)
     }
 
-    /// A commented starting point users can copy, written into the Skins folder.
+    /// A starting point listing every color, written into the Skins folder.
     public static func exampleJSON() -> String {
         let colors = Skin.tokens.map { token in
             "    \"\(token.name)\": \"\(Skin.cassette.colors[token.name] ?? Skin.classic.colors[token.name]!)\""
@@ -128,21 +254,41 @@ public enum SkinLibrary {
         """
         Mac-Amp skins
         =============
-        Put .json skin files in this folder, then pick them from the Skins menu
-        (the menu re-reads this folder each time it opens).
+        A skin is either a .json file in this folder, or a folder containing skin.json plus the
+        images and fonts it uses. Pick skins from the Skins panel (SK button) or the Skins menu;
+        press RELOAD in the panel after editing.
 
         {
-          "name": "Shown in the Skins menu",
-          "face": "classic" or "cassette",
-          "basedOn": "classic", "cassette", or another skin's name (optional),
-          "colors": { "<token>": "#RRGGBB" or "#RRGGBBAA", ... }
+          "name": "Shown in the Skins panel",
+          "face": "classic" or "cassette" (built-in designs),
+          "layout": { ... } (optional: a complete player design; see the Mac-Amp skin guide),
+          "basedOn": "classic", "cassette", "turntable", or another skin's name (optional),
+          "colors": { "<token>": "#RRGGBB" or "#RRGGBBAA", ... },
+          "images": { "<slot>": "file.png"  or  { "file": "file.png", "mode": "tile" }, ... },
+          "fonts":  { "<role>": "Installed Font Name"  or  "MyFont.ttf", ... },
+          "shape":  { "windowCorner": 8, "buttonCorner": 4,
+                      "cassetteWindow": "wide" | "twin", "reels": "teeth" | "spokes" | "solid",
+                      "label": "stripes" | "plain" }
         }
 
-        Colors you leave out come from the basedOn skin, then from Classic.
-        "Example.json" lists every color token with the Cassette Deck values.
+        Anything you leave out comes from the basedOn skin, then from Classic.
+        Images and fonts are looked up next to skin.json (or in this folder for a loose .json).
+        Images stretch to fill their slot unless "mode" is "tile". PNG, JPEG and PDF work.
 
-        Tokens:
+        Examples here: "Example.json" (every color), "Midnight Tape.json"-style color skins,
+        "vu-radio" (a complete layout: VU needles, dial, knobs) and "walnut" (images + fonts).
+        Check a skin without the app:   MacAmp --validate-skin <file or folder>
+        Render a preview image:         MacAmp --render-skin <file or folder> --window all
+        Full format reference:          MacAmp --skin-reference
+
+        Colors:
         \(Skin.tokens.map { "  \($0.name) — \($0.use)" }.joined(separator: "\n"))
+
+        Images:
+        \(Skin.imageSlots.map { "  \($0.name) — \($0.use)" }.joined(separator: "\n"))
+
+        Fonts:
+        \(Skin.fontRoles.map { "  \($0.name) — \($0.use)" }.joined(separator: "\n"))
         """
     }
 }

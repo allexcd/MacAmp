@@ -13,7 +13,7 @@ struct CassetteFace: View {
     var body: some View {
         HStack(spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 4).fill(palette["deck"])
+                palette.surface("deck", palette["deck"]).clipShape(RoundedRectangle(cornerRadius: 4))
                 CassetteView(title: model.current?.title ?? "Drop your music here", format: model.current?.url.pathExtension.uppercased() ?? "TYPE I",
                              live: live)
                 // Smoked glass of the deck door.
@@ -23,19 +23,19 @@ struct CassetteFace: View {
             VStack(spacing: 3) {
                 Button { model.remaining.toggle() } label: {
                     Text((model.remaining ? "−" : "") + clock(model.remaining ? live.duration - live.position : live.position))
-                        .font(.system(size: 17, weight: .medium, design: .monospaced)).foregroundStyle(palette.display)
-                        .frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.displayBackground)
+                        .font(palette.font("display", 17, .medium)).foregroundStyle(palette.display)
+                        .frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.surface("display", palette.displayBackground))
                         .overlay(Rectangle().strokeBorder(palette.border, lineWidth: 0.5))
                 }.buttonStyle(.plain).accessibilityLabel("Toggle elapsed or remaining time")
-                SpectrumBars(source: model.spectrumNow, active: live.playing, barWidth: 3, height: 14).frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.displayBackground)
+                SpectrumBars(source: model.spectrumNow, active: live.playing, barWidth: 3, height: 14).frame(maxWidth: .infinity).padding(.vertical, 2).background(palette.surface("display", palette.displayBackground))
                 HStack(spacing: 2) {
                     Circle().fill(live.playing ? palette["spectrumHigh"] : palette.displayDim).frame(width: 4, height: 4)
                     Text(live.playing ? "PLAY" : (live.position > 0 ? "PAUSE" : "STOP"))
                     Spacer(minLength: 0)
                     Text(model.current?.url.pathExtension.uppercased() ?? "—")
-                }.font(.system(size: 7, weight: .bold, design: .monospaced)).foregroundStyle(palette.display).padding(.horizontal, 3).padding(.vertical, 2).background(palette.displayBackground)
+                }.font(palette.font("display", 7, .bold)).foregroundStyle(palette.display).padding(.horizontal, 3).padding(.vertical, 2).background(palette.surface("display", palette.displayBackground))
                 Spacer(minLength: 0)
-                Text("VOL · BAL").font(.system(size: 6, weight: .bold, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
+                Text("VOL · BAL").font(palette.font("ui", 6, .bold)).frame(maxWidth: .infinity, alignment: .leading)
                 VolumeRow(model: model)
                 PanelButtons(model: model, windows: windows)
             }.frame(width: 85, height: 112)
@@ -57,7 +57,7 @@ struct CassetteView: View {
                 Canvas { g, _ in draw(g, time: tapeTime(at: context.date)) }
             }
             Text("A").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundStyle(palette["cassetteInk"]).offset(x: 13, y: 7)
-            Text(title).font(.custom("Marker Felt", size: 10)).foregroundStyle(palette["cassetteInk"])
+            Text(title).font(palette.font("label", 10)).foregroundStyle(palette["cassetteInk"])
                 .lineLimit(1).minimumScaleFactor(0.6).truncationMode(.tail)
                 .frame(width: 122, alignment: .leading).offset(x: 28, y: 9)
             HStack {
@@ -86,15 +86,23 @@ struct CassetteView: View {
         // Label with two colored stripes running behind the window.
         let labelRect = CGRect(x: 8, y: 5, width: W - 16, height: 68)
         g.fill(Path(roundedRect: labelRect, cornerRadius: 4), with: .color(label))
-        g.fill(Path(CGRect(x: labelRect.minX, y: 28, width: labelRect.width, height: 7)), with: .color(palette["cassetteStripe1"]))
-        g.fill(Path(CGRect(x: labelRect.minX, y: 35, width: labelRect.width, height: 7)), with: .color(palette["cassetteStripe2"]))
+        if let art = palette.image("cassetteLabel") {   // the skin's printed label artwork
+            var printed = g
+            printed.clip(to: Path(roundedRect: labelRect, cornerRadius: 4))
+            printed.draw(Image(nsImage: art.image).resizable(), in: labelRect)
+        } else if palette.labelStyle == "stripes" {
+            g.fill(Path(CGRect(x: labelRect.minX, y: 28, width: labelRect.width, height: 7)), with: .color(palette["cassetteStripe1"]))
+            g.fill(Path(CGRect(x: labelRect.minX, y: 35, width: labelRect.width, height: 7)), with: .color(palette["cassetteStripe2"]))
+        }
         for y in [22.0, 60.0] {   // writing lines
             g.stroke(Path { $0.move(to: CGPoint(x: 26, y: y)); $0.addLine(to: CGPoint(x: labelRect.maxX - 6, y: y)) }, with: .color(ink.opacity(0.18)), lineWidth: 0.5)
         }
 
-        // Window onto the reels.
+        // Window onto the reels: one wide window, or two round ones around the hubs ("twin").
         let window = CGRect(x: 32, y: 32, width: 104, height: 30)
-        let windowPath = Path(roundedRect: window, cornerRadius: 9)
+        let windowPath = palette.cassetteWindow == "twin"
+            ? Path { p in for x in [W / 2 - 30, W / 2 + 30] { p.addEllipse(in: CGRect(x: x - 15, y: window.midY - 15, width: 30, height: 30)) } }
+            : Path(roundedRect: window, cornerRadius: 9)
         g.fill(windowPath, with: .color(deck.opacity(0.9)))
         var inside = g
         inside.clip(to: windowPath)
@@ -140,6 +148,26 @@ struct CassetteView: View {
     /// A reel hub: white ring, dark spindle hole, and six drive teeth that make rotation visible.
     private func drawHub(_ g: GraphicsContext, at center: CGPoint, angle: Double) {
         let reel = palette["reel"]
+        var hub = g
+        hub.translateBy(x: center.x, y: center.y)
+        hub.rotate(by: .radians(angle))
+        switch palette.reels {
+        case "spokes":   // a wheel: rim, three thick spokes, small spindle
+            g.stroke(Path(ellipseIn: CGRect(x: center.x - 8, y: center.y - 8, width: 16, height: 16)), with: .color(reel), lineWidth: 2)
+            for i in 0..<3 {
+                var spoke = hub
+                spoke.rotate(by: .degrees(Double(i) * 120))
+                spoke.fill(Path(roundedRect: CGRect(x: -1.4, y: -8, width: 2.8, height: 8), cornerRadius: 1), with: .color(reel))
+            }
+            g.fill(Path(ellipseIn: CGRect(x: center.x - 2.5, y: center.y - 2.5, width: 5, height: 5)), with: .color(palette["deck"]))
+            return
+        case "solid":    // a plain disk with an off-centre marker
+            g.fill(Path(ellipseIn: CGRect(x: center.x - 8.5, y: center.y - 8.5, width: 17, height: 17)), with: .color(reel))
+            g.fill(Path(ellipseIn: CGRect(x: center.x - 2.5, y: center.y - 2.5, width: 5, height: 5)), with: .color(palette["deck"]))
+            hub.fill(Path(ellipseIn: CGRect(x: -1.5, y: -7, width: 3, height: 3)), with: .color(palette["deck"].opacity(0.7)))
+            return
+        default: break
+        }
         g.fill(Path(ellipseIn: CGRect(x: center.x - 8.5, y: center.y - 8.5, width: 17, height: 17)), with: .color(reel))
         g.fill(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)), with: .color(palette["deck"]))
         var teeth = g

@@ -1,4 +1,5 @@
 import XCTest
+import MacAmpCore
 @testable import MacAmp
 final class SpectrumTests: XCTestCase {
     func testBarsRiseInstantlyFallSteadilyAndPeaksHoldThenDrop() {
@@ -22,5 +23,21 @@ final class SpectrumTests: XCTestCase {
         XCTAssertEqual(spectrum.read(at: 99), first, "nothing newer is due yet")
         let last = spectrum.read(at: 100.2)
         XCTAssertEqual(last, spectrum.read(), "after the block's duration the newest slice is shown")
+    }
+}
+
+final class SkinToolTests: XCTestCase {
+    /// The skill's reference file must match what the app actually accepts.
+    @MainActor func testSkillReferenceMatchesCode() throws {
+        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let file = try String(contentsOf: root.appendingPathComponent("skills/mac-amp-skins/reference.md"), encoding: .utf8)
+        XCTAssertTrue(file.contains(SkinTool.reference()), "Regenerate skills/mac-amp-skins/reference.md with: MacAmp --skin-reference")
+    }
+    func testBundledExamplesAreValid() throws {
+        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let examples = root.appendingPathComponent("skills/mac-amp-skins/examples")
+        let items = try FileManager.default.contentsOfDirectory(at: examples, includingPropertiesForKeys: nil).filter { !$0.lastPathComponent.hasPrefix(".") }
+        XCTAssertGreaterThanOrEqual(items.count, 3)
+        for item in items { XCTAssertEqual(MacAmpCore.SkinValidator.validate(at: item), [], item.lastPathComponent) }
     }
 }

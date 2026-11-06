@@ -9,7 +9,7 @@ struct SkinsView: View {
     var windows: Windows
     @Environment(\.palette) private var palette
     var body: some View {
-        Chrome(title: "Mac-Amp • SKINS", close: { windows.toggle(.skins) }) {
+        Chrome(title: "Mac-Amp • SKINS", close: { windows.toggle(.skins) }, slot: "skins") {
             ScrollView {
                 VStack(spacing: 1) {
                     ForEach(model.skins) { skin in
@@ -18,12 +18,12 @@ struct SkinsView: View {
                         }
                     }
                 }.padding(2)
-            }.background(palette.displayBackground)
+            }.background(palette.surface("display", palette.displayBackground))
             HStack(spacing: 3) {
                 Button("FOLDER") { NSWorkspace.shared.open(model.prepareSkinFolder()) }.help("Open the folder for your own .json skins")
-                Button("RELOAD") { model.reloadSkins() }.help("Re-read the skins folder")
+                Button("RELOAD") { model.refreshSkins(); windows.applySkin() }.help("Re-read the skins folder")
                 Spacer()
-                Text("\(model.skins.count) SKINS").font(.system(size: 8, design: .monospaced)).foregroundStyle(palette.panelAccent)
+                Text("\(model.skins.count) SKINS").font(palette.font("ui", 8)).foregroundStyle(palette.panelAccent)
             }.buttonStyle(RetroButton())
         }.frame(width: 275, height: Windows.skinsHeight)
         .onAppear { model.reloadSkins() }   // pick up files added since last time
@@ -41,13 +41,13 @@ private struct SkinRow: View {
             HStack(spacing: 6) {
                 SkinThumbnail(palette: Palette(skin))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(skin.name).font(.system(size: 9, weight: .bold, design: .monospaced))
+                    Text(skin.name).font(palette.font("display", 9, .bold))
                         .foregroundStyle(active ? palette.displayHighlight : palette.display).lineLimit(1)
-                    Text("\(skin.face == .cassette ? "CASSETTE" : "CLASSIC") • \(skin.id.hasPrefix("file:") ? "CUSTOM" : "BUILT-IN")")
-                        .font(.system(size: 7, design: .monospaced)).foregroundStyle(palette.displayDim)
+                    Text("\(skin.layout != nil ? "LAYOUT" : skin.face == .cassette ? "CASSETTE" : "CLASSIC") • \(Skin.builtIn.contains { $0.id == skin.id } ? "BUILT-IN" : "CUSTOM")")
+                        .font(palette.font("display", 7)).foregroundStyle(palette.displayDim)
                 }
                 Spacer(minLength: 0)
-                Text(active ? "● ON" : "").font(.system(size: 7, weight: .bold, design: .monospaced)).foregroundStyle(palette.display)
+                Text(active ? "● ON" : "").font(palette.font("display", 7, .bold)).foregroundStyle(palette.display)
             }.padding(.horizontal, 4).padding(.vertical, 3).frame(maxWidth: .infinity)
             .background(active ? palette.playingRow : hovering ? palette.playingRow.opacity(0.5) : .clear)
             .contentShape(Rectangle())
@@ -62,7 +62,14 @@ private struct SkinThumbnail: View {
     var body: some View {
         ZStack {
             Rectangle().fill(palette.panel)
-            if palette.face == .cassette {
+            if let layout = palette.layout {
+                // A real miniature of the skin's own player design.
+                let scale = min(56 / layout.width, 27 / layout.height)
+                LayoutCanvas(layout: layout, state: .still)
+                    .environment(\.palette, palette).environment(\.renderingPreview, true)
+                    .scaleEffect(scale).frame(width: layout.width * scale, height: layout.height * scale)
+                    .allowsHitTesting(false)
+            } else if palette.face == .cassette {
                 HStack(spacing: 3) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 2).fill(palette["deck"])
@@ -78,18 +85,18 @@ private struct SkinThumbnail: View {
                             Circle().fill(palette["reel"]).frame(width: 5, height: 5)
                         }.offset(y: -1)
                     }.frame(width: 34, height: 23)
-                    Text("12").font(.system(size: 7, weight: .bold, design: .monospaced)).foregroundStyle(palette.display)
-                        .frame(width: 14, height: 10).background(palette.displayBackground)
+                    Text("12").font(palette.font("display", 7, .bold)).foregroundStyle(palette.display)
+                        .frame(width: 14, height: 10).background(palette.surface("display", palette.displayBackground))
                 }
             } else {
                 HStack(spacing: 2) {
-                    Text("0:42").font(.system(size: 8, weight: .bold, design: .monospaced)).foregroundStyle(palette.display)
-                        .frame(width: 26, height: 20).background(palette.displayBackground)
+                    Text("0:42").font(palette.font("display", 8, .bold)).foregroundStyle(palette.display)
+                        .frame(width: 26, height: 20).background(palette.surface("display", palette.displayBackground))
                     HStack(alignment: .bottom, spacing: 1) {
                         ForEach([0.5, 0.9, 0.7, 0.4, 0.6], id: \.self) { level in
                             Rectangle().fill(palette.spectrum).frame(width: 2, height: 14 * level)
                         }
-                    }.frame(width: 16, height: 18, alignment: .bottom).background(palette.displayBackground)
+                    }.frame(width: 16, height: 18, alignment: .bottom).background(palette.surface("display", palette.displayBackground))
                 }
             }
         }.frame(width: 56, height: 27).overlay(Rectangle().strokeBorder(palette.border, lineWidth: 0.5))

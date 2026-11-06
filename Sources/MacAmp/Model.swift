@@ -22,7 +22,12 @@ import MacAmpCore
     @Published var searchToken = 0
     @Published var skins: [Skin] = Skin.builtIn
     @Published private(set) var skin = Skin.classic
-    var palette: Palette { Palette(skin) }
+    @Published private(set) var palette = Palette.classic
+    /// True while a track is loaded (playing or paused).
+    var isLoaded: Bool { loaded != nil || previewLoaded }
+    private var previewLoaded = false
+    private(set) var isPreview = false
+    private var previewBars: [Float]?
     /// User skins live in the app's (sandboxed) Application Support folder.
     let skinFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacAmp/Skins")
     let live = LiveState()
@@ -133,13 +138,29 @@ import MacAmpCore
     func seek(_ value: Double) { position = value; if loaded != nil { _ = audio.player.seek(time: value) }; changed(); updateNowPlaying() }
     func findInPlaylist() { searchToken += 1 }
     /// Spectrum levels for the current display frame (silent unless playing).
-    func spectrumNow() -> [Float] { audio.player.isPlaying ? audio.spectrum.read(at: ProcessInfo.processInfo.systemUptime) : Self.silent }
+    func spectrumNow() -> [Float] { if let previewBars { return previewBars }; return audio.player.isPlaying ? audio.spectrum.read(at: ProcessInfo.processInfo.systemUptime) : Self.silent }
 
     // MARK: Skins
     func reloadSkins() {
         skins = SkinLibrary.all(in: skinFolder)
         let resolved = SkinLibrary.resolved(session.skin, in: skins)
-        if resolved != skin { skin = resolved }
+        if resolved != skin || palette.name != resolved.name { skin = resolved; palette = Palette(resolved) }
+    }
+    /// Re-reads skin files, images and fonts from disk (after editing a skin).
+    func refreshSkins() { SkinImage.clearCache(); skin = Skin.classic; reloadSkins() }
+    /// Puts the model in a fixed state for `--render-skin` previews (no audio is played).
+    func preview(skin: Skin, state: String, progress: Double, duration: Double) {
+        self.skin = skin; palette = Palette(skin); isPreview = true
+        previewLoaded = state != "stopped"
+        live.duration = duration
+        position = state == "stopped" ? 0 : progress * duration
+        live.playing = state == "playing"
+        previewBars = state == "playing" ? (0..<Spectrum.bands).map { i in Float(max(0.1, 0.82 - Double(i) * 0.028 + [0.1, -0.06, 0.04, -0.02][i % 4])) } : nil
+    }
+    func toggleShuffle() { session.shuffle.toggle(); session.shuffleOrder = nil; save() }
+    func cycleRepeat() {
+        let modes = RepeatMode.allCases
+        session.repeatMode = modes[(modes.firstIndex(of: session.repeatMode)! + 1) % modes.count]; save()
     }
     func useSkin(_ id: String) { session.skin = id; reloadSkins(); save() }
     /// Creates the folder with a README and an example skin the first time, then returns it.
@@ -149,6 +170,13 @@ import MacAmpCore
         let readme = skinFolder.appendingPathComponent("README.txt"), example = skinFolder.appendingPathComponent("Example.json")
         if !manager.fileExists(atPath: readme.path) { try? SkinLibrary.readme().write(to: readme, atomically: true, encoding: .utf8) }
         if !manager.fileExists(atPath: example.path) { try? SkinLibrary.exampleJSON().write(to: example, atomically: true, encoding: .utf8) }
+        // Example skins bundled with the app (VU Radio, Walnut Turntable, Midnight Tape); never overwrite edits.
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("SkinExamples"),
+           let items = try? manager.contentsOfDirectory(at: bundled, includingPropertiesForKeys: nil) {
+            for item in items where !manager.fileExists(atPath: skinFolder.appendingPathComponent(item.lastPathComponent).path) {
+                try? manager.copyItem(at: item, to: skinFolder.appendingPathComponent(item.lastPathComponent))
+            }
+        }
         return skinFolder
     }
 

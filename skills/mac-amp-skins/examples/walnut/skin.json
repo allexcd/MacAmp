@@ -1,0 +1,16 @@
+{
+  "name": "Walnut Turntable",
+  "basedOn": "turntable",
+  "colors": {
+    "display": "#F6D9A6", "displayBackground": "#1A110A", "displayDim": "#A3835B",
+    "text": "#F7E8CF", "panelAccent": "#FFD08A", "border": "#D9AE78",
+    "cassetteInk": "#4A2410", "tonearm": "#E3E1DA", "vinyl": "#101010"
+  },
+  "images": {
+    "panel": { "file": "wood.png", "mode": "tile" },
+    "deck": { "file": "wood-dark.png", "mode": "tile" },
+    "recordLabel": "label.png"
+  },
+  "fonts": { "display": "Menlo", "ui": "Avenir Next", "label": "Futura" },
+  "shape": { "windowCorner": 12, "buttonCorner": 5 }
+}

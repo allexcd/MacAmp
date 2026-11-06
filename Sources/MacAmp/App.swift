@@ -32,22 +32,25 @@ import MacAmpCore
         let window = PlayerWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
         window.titleDrag = { [weak self] event in self?.drag(panel, with: event) }
         window.title = "Mac-Amp \(panel.rawValue)"; window.isReleasedWhenClosed = false; window.isMovableByWindowBackground = false; window.delegate = self
+        // Transparent so skins can round corners or draw non-rectangular players.
+        window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = true
         window.setFrameAutosaveName("MacAmp.\(panel.rawValue)")
         panels[panel] = window; update(panel); window.orderFront(nil)
     }
     func update(_ panel: Panel) {
         guard let window = panels[panel] else { return }
         let scale = model.session.scale
-        (window as? PlayerWindow)?.titleDragHeight = (panel == .player ? 24 : 18) * scale
+        // Layout players mark their own drag areas instead of a fixed title strip.
+        (window as? PlayerWindow)?.titleDragHeight = panel == .player ? (model.palette.layout == nil ? 24 * scale : 0) : 18 * scale
         (window as? PlayerWindow)?.closeButtonWidth = 24 * scale
-        let height: CGFloat
+        var width: CGFloat = 275, height: CGFloat
         switch panel {
-        case .player: height = Self.playerHeight(model.palette.face)
+        case .player: (width, height) = Self.playerSize(model.palette)
         case .playlist: height = 245
         case .equalizer: height = 116
         case .skins: height = Self.skinsHeight
         }
-        let size = NSSize(width: 275, height: height)
+        let size = NSSize(width: width, height: height)
         let view: AnyView
         switch panel {
         case .player: view = AnyView(PlayerView(model: model, live: model.live, windows: self))
@@ -57,6 +60,7 @@ import MacAmpCore
         }
         window.contentView = NSHostingView(rootView: view.environment(\.palette, model.palette).scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
         let top = window.frame.maxY; window.setContentSize(NSSize(width: size.width * scale,height: size.height * scale)); window.setFrameOrigin(NSPoint(x: window.frame.minX,y: top - window.frame.height))
+        window.invalidateShadow()
         if let screen = window.screen ?? NSScreen.main {
             let visible = screen.visibleFrame
             window.setFrameOrigin(NSPoint(x: max(visible.minX,min(window.frame.minX,visible.maxX - window.frame.width)), y: max(visible.minY,min(window.frame.minY,visible.maxY - window.frame.height))))
@@ -64,16 +68,24 @@ import MacAmpCore
     }
     /// The cassette face is taller; everything else keeps the classic 116 pt player.
     static func playerHeight(_ face: Skin.Face) -> CGFloat { face == .cassette ? 179 : 116 }
+    /// A layout skin sets its own size; built-in faces are 275 wide.
+    static func playerSize(_ palette: Palette) -> (CGFloat, CGFloat) {
+        if let layout = palette.layout { return (CGFloat(layout.width), CGFloat(layout.height)) }
+        return (275, playerHeight(palette.face))
+    }
     /// Re-renders every window with the current skin. The player keeps its top edge, so panels
     /// docked below it (directly or through another panel) shift by the change in its height.
     func applySkin() {
         let old = panels.mapValues(\.frame)
         let connected = WindowDocking.connected(to: Panel.player.rawValue, frames: Dictionary(uniqueKeysWithValues: old.map { ($0.key.rawValue, $0.value) }))
         for panel in panels.keys { update(panel) }
-        if let before = old[.player], let after = panels[.player]?.frame, before.height != after.height {
-            let shift = after.height - before.height
-            for (panel, frame) in old where panel != .player && connected.contains(panel.rawValue) && frame.maxY <= before.minY + 1 {
-                panels[panel]?.setFrameOrigin(CGPoint(x: frame.minX, y: frame.minY - shift))
+        if let before = old[.player], let after = panels[.player]?.frame, before.size != after.size {
+            // Keep docked panels attached: those below move with the bottom edge, those to the right with the right edge.
+            let down = after.height - before.height, right = after.width - before.width
+            for (panel, frame) in old where panel != .player && connected.contains(panel.rawValue) {
+                let dy = frame.maxY <= before.minY + 1 ? -down : 0
+                let dx = frame.minX >= before.maxX - 1 ? right : 0
+                if dx != 0 || dy != 0 { panels[panel]?.setFrameOrigin(CGPoint(x: frame.minX + dx, y: frame.minY + dy)) }
             }
         }
         saveFrames()
@@ -146,7 +158,7 @@ final class PlayerWindow: NSWindow {
     var closeButtonWidth: CGFloat = 24
     override func sendEvent(_ event: NSEvent) {
         let point = event.locationInWindow
-        if event.type == .leftMouseDown, point.y >= frame.height - titleDragHeight,
+        if event.type == .leftMouseDown, titleDragHeight > 0, point.y >= frame.height - titleDragHeight,
            point.x >= 0, point.x < frame.width - closeButtonWidth {
             titleDrag?(event)
             return
@@ -220,6 +232,7 @@ final class PlayerWindow: NSWindow {
 }
 @main struct MacAmpApp {
     @MainActor static func main() {
+        if let code = SkinTool.run(CommandLine.arguments) { exit(code) }   // --validate-skin, --render-skin, --skin-reference
         let app = NSApplication.shared; let delegate = AppDelegate(); app.delegate = delegate; app.setActivationPolicy(.regular); app.run(); withExtendedLifetime(delegate) {}
     }
 }

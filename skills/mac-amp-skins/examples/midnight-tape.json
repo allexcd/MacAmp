@@ -1,0 +1,16 @@
+{
+  "name": "Midnight Tape",
+  "face": "cassette",
+  "basedOn": "cassette",
+  "colors": {
+    "display": "#6FD3FF", "displayBackground": "#05080C", "displayDim": "#3F6B85", "displayHighlight": "#E8FAFF",
+    "playingRow": "#0E2A3A", "panelTop": "#3A3F47", "panelMid": "#15171B", "panelBottom": "#2B2F36",
+    "border": "#8A93A0", "text": "#D7DEE8", "panelAccent": "#6FD3FF",
+    "buttonTop": "#59606B", "buttonBottom": "#1E2126", "buttonPressed": "#0B0C0E", "buttonText": "#EAF4FF",
+    "sliderFillStart": "#1F6FB2", "sliderFillEnd": "#9BE8FF", "knob": "#C9D2DC",
+    "spectrumHigh": "#FF4FD8", "spectrumMid": "#8C7BFF",
+    "cassetteShell": "#3F9BDDB8", "cassetteLabel": "#E9EEF3", "cassetteStripe1": "#2E5BFF", "cassetteStripe2": "#B23CFF",
+    "cassetteInk": "#101828", "tape": "#2A1A10", "reel": "#FFFFFF", "deck": "#07090C"
+  },
+  "shape": { "buttonCorner": 3, "reels": "solid" }
+}
