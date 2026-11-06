@@ -5,7 +5,7 @@ import MacAmpCore
 #endif
 
 @MainActor final class Windows: NSObject, NSWindowDelegate {
-    enum Panel: String { case player, playlist, equalizer }
+    enum Panel: String { case player, playlist, equalizer, skins }
     let model: Model
     var panels: [Panel: NSWindow] = [:]
     init(model: Model) { self.model = model; super.init() }
@@ -13,10 +13,21 @@ import MacAmpCore
         make(.player, size: NSSize(width: 275,height: 116), origin: NSPoint(x: 240,y: 600))
         make(.equalizer, size: NSSize(width: 275,height: 116), origin: NSPoint(x: 240,y: 474))
         make(.playlist, size: NSSize(width: 275,height: 245), origin: NSPoint(x: 240,y: 219))
+        let skinsSaved = UserDefaults.standard.string(forKey: "NSWindow Frame MacAmp.skins") != nil
+        make(.skins, size: NSSize(width: 275,height: Self.skinsHeight), origin: NSPoint(x: 515,y: 600))
+        if !skinsSaved { placeBesidePlayer(.skins) }
         panels[.player]?.makeKeyAndOrderFront(nil)
         if !model.session.eqVisible { panels[.equalizer]?.orderOut(nil) }
         if !model.session.playlistVisible { panels[.playlist]?.orderOut(nil) }
+        if model.session.skinsVisible != true { panels[.skins]?.orderOut(nil) }
     }
+    static let skinsHeight: CGFloat = 174
+    /// Docks a panel against the player's right edge, top-aligned (used the first time it opens).
+    func placeBesidePlayer(_ panel: Panel) {
+        guard let player = panels[.player]?.frame, let window = panels[panel] else { return }
+        window.setFrameOrigin(CGPoint(x: player.maxX, y: player.maxY - window.frame.height))
+    }
+    func useSkin(_ id: String) { model.useSkin(id); applySkin() }
     func make(_ panel: Panel, size: NSSize, origin: NSPoint) {
         let window = PlayerWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
         window.titleDrag = { [weak self] event in self?.drag(panel, with: event) }
@@ -29,12 +40,20 @@ import MacAmpCore
         let scale = model.session.scale
         (window as? PlayerWindow)?.titleDragHeight = (panel == .player ? 24 : 18) * scale
         (window as? PlayerWindow)?.closeButtonWidth = 24 * scale
-        let size = NSSize(width: 275, height: panel == .playlist ? 245 : panel == .player ? Self.playerHeight(model.palette.face) : 116)
+        let height: CGFloat
+        switch panel {
+        case .player: height = Self.playerHeight(model.palette.face)
+        case .playlist: height = 245
+        case .equalizer: height = 116
+        case .skins: height = Self.skinsHeight
+        }
+        let size = NSSize(width: 275, height: height)
         let view: AnyView
         switch panel {
         case .player: view = AnyView(PlayerView(model: model, live: model.live, windows: self))
         case .playlist: view = AnyView(PlaylistView(model: model, windows: self))
         case .equalizer: view = AnyView(EqualizerView(model: model, windows: self))
+        case .skins: view = AnyView(SkinsView(model: model, windows: self))
         }
         window.contentView = NSHostingView(rootView: view.environment(\.palette, model.palette).scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
         let top = window.frame.maxY; window.setContentSize(NSSize(width: size.width * scale,height: size.height * scale)); window.setFrameOrigin(NSPoint(x: window.frame.minX,y: top - window.frame.height))
@@ -118,7 +137,8 @@ import MacAmpCore
     func toggle(_ panel: Panel) {
         guard let window = panels[panel] else { return }
         if window.isVisible { window.orderOut(nil) } else { window.makeKeyAndOrderFront(nil) }
-        model.session.eqVisible = panels[.equalizer]?.isVisible ?? false; model.session.playlistVisible = panels[.playlist]?.isVisible ?? false; model.save()
+        model.session.eqVisible = panels[.equalizer]?.isVisible ?? false; model.session.playlistVisible = panels[.playlist]?.isVisible ?? false
+        model.session.skinsVisible = panels[.skins]?.isVisible ?? false; model.save()
     }
 }
 final class PlayerWindow: NSWindow {
@@ -172,12 +192,14 @@ final class PlayerWindow: NSWindow {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        let panel = NSMenuItem(title: "Skins Panel", action: #selector(skinsPanel), keyEquivalent: "k"); panel.target = self; menu.addItem(panel)
         let open = NSMenuItem(title: "Open Skins Folder", action: #selector(openSkins), keyEquivalent: ""); open.target = self; menu.addItem(open)
     }
     @objc func chooseSkin(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        model.useSkin(id); windows.applySkin()
+        windows.useSkin(id)
     }
+    @objc func skinsPanel() { windows.toggle(.skins) }
     @objc func openSkins() { NSWorkspace.shared.open(model.prepareSkinFolder()) }
     /// Plain-key shortcuts (Space, J) step aside while a text field is being edited.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

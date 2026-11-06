@@ -200,7 +200,7 @@ struct PanelButtons: View {
     var windows: Windows
     @Environment(\.palette) private var palette
     var body: some View {
-        HStack { Button("EQ") { windows.toggle(.equalizer) }; Button("PL") { windows.toggle(.playlist) }; Spacer(); Text("●").foregroundStyle(palette.panelAccent).font(.system(size: 7)) }.buttonStyle(RetroButton())
+        HStack(spacing: 3) { Button("EQ") { windows.toggle(.equalizer) }; Button("PL") { windows.toggle(.playlist) }; Button("SK") { windows.toggle(.skins) }.help("Skins").accessibilityLabel("Skins"); Spacer(minLength: 0); Text("●").foregroundStyle(palette.panelAccent).font(.system(size: 7)) }.buttonStyle(RetroButton())
     }
 }
 struct TransportRow: View {

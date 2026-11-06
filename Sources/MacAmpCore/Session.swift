@@ -25,6 +25,7 @@ public struct Session: Codable {
     public var eqVisible = true
     /// Optional so sessions saved before skins existed still decode.
     public var skin: String?
+    public var skinsVisible: Bool?
     public init() {}
     public mutating func next(after id: UUID?, backwards: Bool = false, automatic: Bool = false) -> UUID? {
         guard !tracks.isEmpty else { return nil }
