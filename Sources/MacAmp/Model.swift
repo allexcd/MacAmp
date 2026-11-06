@@ -12,13 +12,20 @@ import MacAmpCore
 @MainActor final class LiveState: ObservableObject {
     @Published var playing = false
     @Published var duration: Double = 0
-    @Published var position: Double = 0
+    @Published var position: Double = 0 { didSet { positionDate = Date() } }
+    /// When `position` last changed; lets animations extrapolate smoothly between updates.
+    var positionDate = Date()
     @Published var bars: [Float] = Array(repeating: 0, count: 20)
 }
 
 @MainActor final class Model: ObservableObject {
     @Published var session: Session
     @Published var searchToken = 0
+    @Published var skins: [Skin] = Skin.builtIn
+    @Published private(set) var skin = Skin.classic
+    var palette: Palette { Palette(skin) }
+    /// User skins live in the app's (sandboxed) Application Support folder.
+    let skinFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacAmp/Skins")
     let live = LiveState()
     // Forwarders only publish real changes, so an idle player triggers no redraws.
     var playing: Bool { get { live.playing } set { if live.playing != newValue { live.playing = newValue } } }
@@ -47,6 +54,7 @@ import MacAmpCore
         if session.bands.count != 10 { session.bands = Array(repeating: 0, count: 10) }
         position = session.position
         audio.apply(session)
+        reloadSkins()
         audio.onEnd = { [weak self] in self?.advance(automatic: true) }
         audio.onError = { [weak self] error in self?.handleFailure(error) }
         setUpRemoteCommands()
@@ -127,6 +135,23 @@ import MacAmpCore
     }
     func seek(_ value: Double) { position = value; if loaded != nil { _ = audio.player.seek(time: value) }; changed(); updateNowPlaying() }
     func findInPlaylist() { searchToken += 1 }
+
+    // MARK: Skins
+    func reloadSkins() {
+        skins = SkinLibrary.all(in: skinFolder)
+        let resolved = SkinLibrary.resolved(session.skin, in: skins)
+        if resolved != skin { skin = resolved }
+    }
+    func useSkin(_ id: String) { session.skin = id; reloadSkins(); save() }
+    /// Creates the folder with a README and an example skin the first time, then returns it.
+    func prepareSkinFolder() -> URL {
+        let manager = FileManager.default
+        try? manager.createDirectory(at: skinFolder, withIntermediateDirectories: true)
+        let readme = skinFolder.appendingPathComponent("README.txt"), example = skinFolder.appendingPathComponent("Example.json")
+        if !manager.fileExists(atPath: readme.path) { try? SkinLibrary.readme().write(to: readme, atomically: true, encoding: .utf8) }
+        if !manager.fileExists(atPath: example.path) { try? SkinLibrary.exampleJSON().write(to: example, atomically: true, encoding: .utf8) }
+        return skinFolder
+    }
 
     // MARK: Media keys, Control Center and the Now Playing widget
     private func setUpRemoteCommands() {

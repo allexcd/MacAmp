@@ -29,19 +29,35 @@ import MacAmpCore
         let scale = model.session.scale
         (window as? PlayerWindow)?.titleDragHeight = (panel == .player ? 24 : 18) * scale
         (window as? PlayerWindow)?.closeButtonWidth = 24 * scale
-        let size = NSSize(width: 275, height: panel == .playlist ? 245 : 116)
+        let size = NSSize(width: 275, height: panel == .playlist ? 245 : panel == .player ? Self.playerHeight(model.palette.face) : 116)
         let view: AnyView
         switch panel {
         case .player: view = AnyView(PlayerView(model: model, live: model.live, windows: self))
         case .playlist: view = AnyView(PlaylistView(model: model, windows: self))
         case .equalizer: view = AnyView(EqualizerView(model: model, windows: self))
         }
-        window.contentView = NSHostingView(rootView: view.scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
+        window.contentView = NSHostingView(rootView: view.environment(\.palette, model.palette).scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
         let top = window.frame.maxY; window.setContentSize(NSSize(width: size.width * scale,height: size.height * scale)); window.setFrameOrigin(NSPoint(x: window.frame.minX,y: top - window.frame.height))
         if let screen = window.screen ?? NSScreen.main {
             let visible = screen.visibleFrame
             window.setFrameOrigin(NSPoint(x: max(visible.minX,min(window.frame.minX,visible.maxX - window.frame.width)), y: max(visible.minY,min(window.frame.minY,visible.maxY - window.frame.height))))
         }
+    }
+    /// The cassette face is taller; everything else keeps the classic 116 pt player.
+    static func playerHeight(_ face: Skin.Face) -> CGFloat { face == .cassette ? 179 : 116 }
+    /// Re-renders every window with the current skin. The player keeps its top edge, so panels
+    /// docked below it (directly or through another panel) shift by the change in its height.
+    func applySkin() {
+        let old = panels.mapValues(\.frame)
+        let connected = WindowDocking.connected(to: Panel.player.rawValue, frames: Dictionary(uniqueKeysWithValues: old.map { ($0.key.rawValue, $0.value) }))
+        for panel in panels.keys { update(panel) }
+        if let before = old[.player], let after = panels[.player]?.frame, before.height != after.height {
+            let shift = after.height - before.height
+            for (panel, frame) in old where panel != .player && connected.contains(panel.rawValue) && frame.maxY <= before.minY + 1 {
+                panels[panel]?.setFrameOrigin(CGPoint(x: frame.minX, y: frame.minY - shift))
+            }
+        }
+        saveFrames()
     }
     func scale(_ value: Double) {
         let old = panels.mapValues(\.frame)
@@ -119,13 +135,13 @@ final class PlayerWindow: NSWindow {
     }
     var titleDrag: ((NSEvent) -> Void)?
     override var canBecomeKey: Bool { true }; override var canBecomeMain: Bool { true } }
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     var model: Model!
     var windows: Windows!
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set the Dock icon directly so a stale LaunchServices cache can't show the generic one.
         if let icon = Bundle.main.image(forResource: "AppIcon") { NSApp.applicationIconImage = icon }
-        model = Model(); windows = Windows(model: model); windows.show(); menus(); NSApp.activate(ignoringOtherApps: true)
+        model = Model(); windows = Windows(model: model); windows.show(); menus(); menuNeedsUpdate(NSApp.mainMenu!.items.first { $0.submenu?.title == "Skins" }!.submenu!); NSApp.activate(ignoringOtherApps: true)
     }
     func applicationWillTerminate(_ notification: Notification) { model.save() }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { windows.panels[.player]?.makeKeyAndOrderFront(nil); return true }
@@ -142,8 +158,27 @@ final class PlayerWindow: NSWindow {
         let playback = menu("Playback"); item(playback,"Play / Pause",#selector(toggle)," ",modifiers: []); item(playback,"Stop",#selector(stop),"."); item(playback,"Next",#selector(next),"]"); item(playback,"Previous",#selector(previous),"[")
         let view = menu("View"); item(view,"Playlist",#selector(playlist),"l"); item(view,"Equalizer",#selector(eq),"e")
         for scale in 1...3 { let i = NSMenuItem(title: "\(scale)× Size",action: #selector(resize(_:)),keyEquivalent: "\(scale)"); i.target = self; i.tag = scale; view.addItem(i) }
+        let skins = menu("Skins"); skins.delegate = self   // rebuilt from disk each time it opens
         let window = menu("Window"); NSApp.windowsMenu = window; item(window,"Minimize Player",#selector(minimize),"m"); item(window,"Show Player",#selector(showPlayer),"0")
     }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == "Skins" else { return }
+        model.reloadSkins(); menu.removeAllItems()
+        for (index, skin) in model.skins.enumerated() {
+            if index == Skin.builtIn.count { menu.addItem(.separator()) }
+            let item = NSMenuItem(title: skin.name, action: #selector(chooseSkin(_:)), keyEquivalent: index < 9 ? "\(index + 1)" : "")
+            item.keyEquivalentModifierMask = [.command, .option]
+            item.target = self; item.representedObject = skin.id; item.state = skin.id == model.skin.id ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let open = NSMenuItem(title: "Open Skins Folder", action: #selector(openSkins), keyEquivalent: ""); open.target = self; menu.addItem(open)
+    }
+    @objc func chooseSkin(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        model.useSkin(id); windows.applySkin()
+    }
+    @objc func openSkins() { NSWorkspace.shared.open(model.prepareSkinFolder()) }
     /// Plain-key shortcuts (Space, J) step aside while a text field is being edited.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         !(menuItem.keyEquivalentModifierMask.isEmpty && !menuItem.keyEquivalent.isEmpty && NSApp.keyWindow?.firstResponder is NSTextView)
