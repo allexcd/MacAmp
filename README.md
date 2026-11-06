@@ -32,6 +32,7 @@ Mac-Amp plays your local music files: no accounts, no streaming, no library impo
 - **Spectrum analyzer** with the classic motion: bars jump on the beat, fall back smoothly, and peak markers hold for a moment before dropping.
 - **Ten-band equalizer** (31 Hz–16 kHz) with preamp and automatic headroom, plus volume and balance.
 - **Playlist** with drag-to-reorder, search (⌘F or J), shuffle without repeats, repeat off/all/one, and auto-scroll to the playing track.
+- **Notch player**: rest the pointer on the MacBook's camera notch and a small player drops out of it, with the song, a live spectrum, a seek bar and controls. Works even while Mac-Amp is hidden or minimized.
 - **Media keys and Control Center**: play/pause, next, previous and scrubbing from the keyboard or the Now Playing widget.
 - **Skins that can look like anything**: recolor in a few lines, add textures, fonts and artwork, or design a completely new player in JSON with parts that move to the music (spinning records, tonearms, VU needles). Built in: Classic, an animated Cassette Deck, and a Turntable. There's also an [AI skill](skills/mac-amp-skins/SKILL.md) for building skins with an LLM.
 - **Picks up where you left off**: queue, position, EQ, volume, skin and window layout are restored at launch, without auto-playing.
@@ -98,6 +99,14 @@ Folders are scanned recursively (hidden files and symlinks are skipped). Mac-Amp
 | **Playlist** | Double-click a track to play it. Drag rows to reorder, press Delete or **− REM** to remove, right-click for Play/Remove. **FIND** searches by title or artist. |
 | **Equalizer** | Preamp plus ten bands of ±12 dB. **ON/OFF** bypasses it, **FLAT** resets every band. |
 | **Skins** | Lists every skin with a preview; click one to switch. |
+
+### The notch player
+
+On a MacBook with a camera notch, rest the pointer on the notch for a moment and a black mini player grows out of it: song and artist, a spinning record, the spectrum, a seek bar you can drag, and shuffle, previous, play/pause and next buttons. The window button brings the full player back. Move the pointer away and it tucks back into the notch. It stays available while Mac-Amp is hidden or minimized, and takes its accent colors from the current skin.
+
+On Macs without a notch, the same hover spot sits at the top centre of the main screen. Turn it off with **View → Notch Player**.
+
+### Moving and docking windows
 
 Drag any window by its title bar. Bring a panel within about 24 points of another window's edge and it snaps there; drag it away to detach it.
 

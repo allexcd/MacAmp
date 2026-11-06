@@ -179,10 +179,11 @@ final class PlayerWindow: NSWindow {
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     var model: Model!
     var windows: Windows!
+    var notch: NotchController!
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set the Dock icon directly so a stale LaunchServices cache can't show the generic one.
         if let icon = Bundle.main.image(forResource: "AppIcon") { NSApp.applicationIconImage = icon }
-        model = Model(); windows = Windows(model: model); windows.show(); menus(); menuNeedsUpdate(NSApp.mainMenu!.items.first { $0.submenu?.title == "Skins" }!.submenu!); NSApp.activate(ignoringOtherApps: true)
+        model = Model(); windows = Windows(model: model); windows.show(); notch = NotchController(model: model, windows: windows); menus(); menuNeedsUpdate(NSApp.mainMenu!.items.first { $0.submenu?.title == "Skins" }!.submenu!); NSApp.activate(ignoringOtherApps: true)
     }
     func applicationWillTerminate(_ notification: Notification) { model.save() }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { windows.panels[.player]?.makeKeyAndOrderFront(nil); return true }
@@ -199,6 +200,9 @@ final class PlayerWindow: NSWindow {
         let playback = menu("Playback"); item(playback,"Play / Pause",#selector(toggle)," ",modifiers: []); item(playback,"Stop",#selector(stop),"."); item(playback,"Next",#selector(next),"]"); item(playback,"Previous",#selector(previous),"[")
         let view = menu("View"); item(view,"Playlist",#selector(playlist),"l"); item(view,"Equalizer",#selector(eq),"e")
         for scale in 1...3 { let i = NSMenuItem(title: "\(scale)× Size",action: #selector(resize(_:)),keyEquivalent: "\(scale)"); i.target = self; i.tag = scale; view.addItem(i) }
+        view.addItem(.separator())
+        let notchItem = NSMenuItem(title: "Notch Player", action: #selector(toggleNotch(_:)), keyEquivalent: ""); notchItem.target = self
+        notchItem.state = notch.enabled ? .on : .off; view.addItem(notchItem)
         let skins = menu("Skins"); skins.delegate = self   // rebuilt from disk each time it opens
         let window = menu("Window"); NSApp.windowsMenu = window; item(window,"Minimize Player",#selector(minimize),"m"); item(window,"Show Player",#selector(showPlayer),"0")
     }
@@ -220,6 +224,7 @@ final class PlayerWindow: NSWindow {
         guard let id = sender.representedObject as? String else { return }
         windows.useSkin(id)
     }
+    @objc func toggleNotch(_ sender: NSMenuItem) { notch.enabled.toggle(); sender.state = notch.enabled ? .on : .off }
     @objc func skinsPanel() { windows.toggle(.skins) }
     @objc func openSkins() { NSWorkspace.shared.open(model.prepareSkinFolder()) }
     /// Plain-key shortcuts (Space, J) step aside while a text field is being edited.
