@@ -58,7 +58,7 @@ import MacAmpCore
         case .equalizer: view = AnyView(EqualizerView(model: model, windows: self))
         case .skins: view = AnyView(SkinsView(model: model, windows: self))
         }
-        window.contentView = NSHostingView(rootView: view.environment(\.palette, model.palette).scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
+        window.contentView = NSHostingView(rootView: Themed(model: model, content: view).scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
         let top = window.frame.maxY; window.setContentSize(NSSize(width: size.width * scale,height: size.height * scale)); window.setFrameOrigin(NSPoint(x: window.frame.minX,y: top - window.frame.height))
         window.invalidateShadow()
         if let screen = window.screen ?? NSScreen.main {
@@ -78,7 +78,10 @@ import MacAmpCore
     func applySkin() {
         let old = panels.mapValues(\.frame)
         let connected = WindowDocking.connected(to: Panel.player.rawValue, frames: Dictionary(uniqueKeysWithValues: old.map { ($0.key.rawValue, $0.value) }))
-        for panel in panels.keys { update(panel) }
+        // Windows restyle themselves (see Themed), so their state such as scroll positions survives.
+        // Only the player is rebuilt, because a skin can change its size and drag areas.
+        update(.player)
+        DispatchQueue.main.async { for window in self.panels.values { window.invalidateShadow() } }   // rounded corners may change
         if let before = old[.player], let after = panels[.player]?.frame, before.size != after.size {
             // Keep docked panels attached: those below move with the bottom edge, those to the right with the right edge.
             let down = after.height - before.height, right = after.width - before.width
@@ -152,6 +155,12 @@ import MacAmpCore
         model.session.eqVisible = panels[.equalizer]?.isVisible ?? false; model.session.playlistVisible = panels[.playlist]?.isVisible ?? false
         model.session.skinsVisible = panels[.skins]?.isVisible ?? false; model.save()
     }
+}
+/// Supplies the current skin to a window's views and restyles them live when the skin changes.
+struct Themed: View {
+    @ObservedObject var model: Model
+    let content: AnyView
+    var body: some View { content.environment(\.palette, model.palette) }
 }
 final class PlayerWindow: NSWindow {
     var titleDragHeight: CGFloat = 24
@@ -228,7 +237,7 @@ final class PlayerWindow: NSWindow {
     @objc func playlist() { windows.toggle(.playlist) }; @objc func eq() { windows.toggle(.equalizer) }
     @objc func resize(_ sender: NSMenuItem) { windows.scale(Double(sender.tag)) }
     @objc func hide() { NSApp.hide(nil) }; @objc func quit() { NSApp.terminate(nil) }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Mac-Amp", .applicationVersion:"0.2.0", .credits:NSAttributedString(string:"Local music. Familiar little windows.\nOriginal retro artwork. Audio powered by SFBAudioEngine.\nSee THIRD_PARTY_NOTICES.md in the app resources.")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Mac-Amp", .applicationVersion:"0.2.1", .credits:NSAttributedString(string:"Local music. Familiar little windows.\nOriginal retro artwork. Audio powered by SFBAudioEngine.\nSee THIRD_PARTY_NOTICES.md in the app resources.")]) }
 }
 @main struct MacAmpApp {
     @MainActor static func main() {

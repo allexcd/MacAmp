@@ -10,15 +10,19 @@ struct SkinsView: View {
     @Environment(\.palette) private var palette
     var body: some View {
         Chrome(title: "Mac-Amp • SKINS", close: { windows.toggle(.skins) }, slot: "skins") {
-            ScrollView {
-                VStack(spacing: 1) {
-                    ForEach(model.skins) { skin in
-                        SkinRow(skin: SkinLibrary.resolved(skin.id, in: model.skins), active: skin.id == model.skin.id) {
-                            windows.useSkin(skin.id)
+            ScrollViewReader { scroller in
+                ScrollView {
+                    VStack(spacing: 1) {
+                        ForEach(model.skins) { skin in
+                            SkinRow(skin: SkinLibrary.resolved(skin.id, in: model.skins), active: skin.id == model.skin.id) {
+                                windows.useSkin(skin.id)
+                            }.id(skin.id)
                         }
-                    }
-                }.padding(2)
-            }.background(palette.surface("display", palette.displayBackground))
+                    }.padding(2)
+                }.background(palette.surface("display", palette.displayBackground))
+                // Opening the panel shows the active skin; after that the list stays wherever the user scrolls.
+                .onAppear { let id = model.skin.id; DispatchQueue.main.async { scroller.scrollTo(id, anchor: .center) } }
+            }
             HStack(spacing: 3) {
                 Button("FOLDER") { NSWorkspace.shared.open(model.prepareSkinFolder()) }.help("Open the folder for your own .json skins")
                 Button("RELOAD") { model.refreshSkins(); windows.applySkin() }.help("Re-read the skins folder")
