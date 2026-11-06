@@ -39,15 +39,23 @@ Mac-Amp plays your local music files: no accounts, no streaming, no library impo
 
 ## Install and run
 
-There are no prebuilt downloads yet; you build the app from source. It takes a couple of minutes.
+### Download (easiest)
 
-### Requirements
+1. Download `MacAmp-<version>-macOS-arm64.zip` from the [latest release](https://github.com/allexcd/MacAmp/releases/latest) and double-click it to unzip.
+2. Drag **MacAmp.app** into your **Applications** folder.
+3. Open it. The app isn't notarized by Apple yet, so the first launch is blocked with a warning. Click **Done**, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to the Mac-Amp message. You only need to do this once.
 
-- A Mac with **Apple Silicon** (M1 or newer)
-- **macOS 15** (Sequoia) or newer
-- **Xcode 16** or newer, installed from the App Store and opened once so it can finish setting up
+Prefer the Terminal? This clears the download flag instead:
 
-### Build the app
+```bash
+xattr -dr com.apple.quarantine /Applications/MacAmp.app
+```
+
+Needs a Mac with **Apple Silicon** (M1 or newer) and **macOS 15** (Sequoia) or newer.
+
+### Build from source
+
+Requirements: Apple Silicon, macOS 15 or newer, and **Xcode 16** or newer (installed from the App Store and opened once so it can finish setting up).
 
 ```bash
 git clone https://github.com/allexcd/MacAmp.git
@@ -67,7 +75,7 @@ open dist/MacAmp.app
 
 The first build downloads SFBAudioEngine and its codecs (pinned in `Package.resolved`); later builds work offline. The result, `dist/MacAmp.app`, is a self-contained app. Drag it into `/Applications` if you want to keep it.
 
-The app is signed only for the Mac that built it. If you copy it to another Mac, macOS will warn that it's from an unidentified developer; right-click it and choose **Open** the first time.
+The app is signed only for the Mac that built it. If you copy it to another Mac, allow it once with **Open Anyway** as described in the download steps.
 
 ### Run from Xcode
 
