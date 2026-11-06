@@ -26,6 +26,9 @@ public struct Session: Codable {
     /// Optional so sessions saved before skins existed still decode.
     public var skin: String?
     public var skinsVisible: Bool?
+    /// Heights the user dragged the playlist and skins panel to (unscaled points); nil = default.
+    public var playlistHeight: Double?
+    public var skinsHeight: Double?
     public init() {}
     public mutating func next(after id: UUID?, backwards: Bool = false, automatic: Bool = false) -> UUID? {
         guard !tracks.isEmpty else { return nil }

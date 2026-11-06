@@ -32,6 +32,8 @@ struct Chrome<Content: View>: View {
     var close: () -> Void
     /// Image slot for this window's background ("player", "playlist", …; falls back to "panel").
     var slot = "panel"
+    /// Shows a grip in the bottom-right corner; the window handles the drag (see Windows.resize).
+    var grip = false
     @ViewBuilder var content: Content
     @Environment(\.palette) private var palette
     var body: some View {
@@ -51,7 +53,24 @@ struct Chrome<Content: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(palette.surface(slot, palette.panel))
         .clipShape(RoundedRectangle(cornerRadius: palette.windowCorner))
         .overlay(RoundedRectangle(cornerRadius: palette.windowCorner).strokeBorder(palette.border, lineWidth: 1))
+        .overlay(alignment: .bottomTrailing) { if grip { ResizeGrip().padding(2) } }
         .foregroundStyle(palette.text)
+    }
+}
+/// Three diagonal ridges, like the size grip of old desktop players.
+struct ResizeGrip: View {
+    @Environment(\.palette) private var palette
+    var body: some View {
+        Canvas { g, size in
+            for i in 0..<3 {
+                let inset = CGFloat(i) * 3 + 2
+                var line = Path(); line.move(to: CGPoint(x: size.width - 1, y: inset)); line.addLine(to: CGPoint(x: inset, y: size.height - 1))
+                g.stroke(line, with: .color(palette.panelAccent.opacity(0.9)), lineWidth: 1)
+            }
+        }.frame(width: 10, height: 10)
+        .pointerStyle(.frameResize(position: .bottomTrailing, directions: [.inward, .outward]))
+        .help("Drag up or down to resize")
+        .accessibilityLabel("Resize")
     }
 }
 struct RetroButton: ButtonStyle {
@@ -336,7 +355,7 @@ struct PlaylistView: View {
         return all.filter { row in let title = row.track.title.lowercased(); return words.allSatisfy { title.contains($0) } }
     }
     var body: some View {
-        Chrome(title: "Mac-Amp • PLAYLIST", close: { windows.toggle(.playlist) }, slot: "playlist") {
+        Chrome(title: "Mac-Amp • PLAYLIST", close: { windows.toggle(.playlist) }, slot: "playlist", grip: true) {
             ScrollViewReader { scroller in
                 if searching {
                     HStack(spacing: 3) {
@@ -402,8 +421,8 @@ struct PlaylistView: View {
                 Button("CLEAR") { model.remove(Set(model.session.tracks.map(\.id))) }
                 Button("FIND") { model.findInPlaylist() }.accessibilityLabel("Search playlist")
                 Spacer(); Text(model.importing ? "READING…" : "\(model.session.tracks.count) TRACKS").font(palette.font("ui", 8)).foregroundStyle(palette.panelAccent)
-            }.buttonStyle(RetroButton())
-        }.frame(width: 275, height: 245)
+            }.buttonStyle(RetroButton()).padding(.trailing, 9)   // room for the size grip
+        }.frame(width: 275).frame(maxHeight: .infinity)
     }
     /// The field only exists after the next render, and the window must be key to accept typing.
     private func focusSearch() {

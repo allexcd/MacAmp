@@ -9,7 +9,7 @@ struct SkinsView: View {
     var windows: Windows
     @Environment(\.palette) private var palette
     var body: some View {
-        Chrome(title: "Mac-Amp • SKINS", close: { windows.toggle(.skins) }, slot: "skins") {
+        Chrome(title: "Mac-Amp • SKINS", close: { windows.toggle(.skins) }, slot: "skins", grip: true) {
             ScrollViewReader { scroller in
                 ScrollView {
                     VStack(spacing: 1) {
@@ -28,8 +28,8 @@ struct SkinsView: View {
                 Button("RELOAD") { model.refreshSkins(); windows.applySkin() }.help("Re-read the skins folder")
                 Spacer()
                 Text("\(model.skins.count) SKINS").font(palette.font("ui", 8)).foregroundStyle(palette.panelAccent)
-            }.buttonStyle(RetroButton())
-        }.frame(width: 275, height: Windows.skinsHeight)
+            }.buttonStyle(RetroButton()).padding(.trailing, 9)   // room for the size grip
+        }.frame(width: 275).frame(maxHeight: .infinity)
         .onAppear { model.reloadSkins() }   // pick up files added since last time
     }
 }

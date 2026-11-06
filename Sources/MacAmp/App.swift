@@ -22,6 +22,39 @@ import MacAmpCore
         if model.session.skinsVisible != true { panels[.skins]?.orderOut(nil) }
     }
     static let skinsHeight: CGFloat = 174
+    /// Panels whose height the user can drag, with their default and smallest heights.
+    static let resizable: [Panel: (standard: CGFloat, minimum: CGFloat)] = [.playlist: (245, 116), .skins: (skinsHeight, 96)]
+    func height(of panel: Panel) -> CGFloat {
+        guard let limits = Self.resizable[panel] else { return 116 }
+        let saved = panel == .playlist ? model.session.playlistHeight : model.session.skinsHeight
+        return max(limits.minimum, saved.map { CGFloat($0) } ?? limits.standard)
+    }
+    /// Drags the bottom edge of the playlist or skins panel. The top stays put, and panels
+    /// docked below it (directly or through each other) move with the bottom edge.
+    func resize(_ panel: Panel, with event: NSEvent) {
+        guard let window = panels[panel], let limits = Self.resizable[panel] else { return }
+        let scale = model.session.scale
+        let start = window.frame, mouseStart = NSEvent.mouseLocation
+        let others = panels.filter { $0.key != panel && $0.value.isVisible }.mapValues(\.frame)
+        var below: [Panel: CGRect] = [:], edges = [start]
+        while let (next, frame) = others.first(where: { item in below[item.key] == nil && item.value.maxY <= start.minY + 1
+            && edges.contains { abs(item.value.maxY - $0.minY) <= 1 && item.value.maxX > $0.minX + 1 && item.value.minX < $0.maxX - 1 } }) {
+            below[next] = frame; edges.append(frame)
+        }
+        let bottom = (window.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0
+        let lowest = below.values.map(\.minY).min().map { start.minY - $0 } ?? 0   // keep docked panels on screen
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let wanted = start.height + mouseStart.y - NSEvent.mouseLocation.y
+            let height = max(limits.minimum * scale, min(wanted, start.maxY - bottom - lowest)).rounded()
+            window.setFrame(CGRect(x: start.minX, y: start.maxY - height, width: start.width, height: height), display: true)
+            let dy = start.height - height
+            for (other, frame) in below { panels[other]?.setFrameOrigin(CGPoint(x: frame.minX, y: frame.minY - dy)) }
+            if next.type == .leftMouseUp { break }
+        }
+        let saved = Double(window.frame.height / scale)
+        if panel == .playlist { model.session.playlistHeight = saved } else { model.session.skinsHeight = saved }
+        window.invalidateShadow(); saveFrames(); model.save()
+    }
     /// Docks a panel against the player's right edge, top-aligned (used the first time it opens).
     func placeBesidePlayer(_ panel: Panel) {
         guard let player = panels[.player]?.frame, let window = panels[panel] else { return }
@@ -31,6 +64,7 @@ import MacAmpCore
     func make(_ panel: Panel, size: NSSize, origin: NSPoint) {
         let window = PlayerWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
         window.titleDrag = { [weak self] event in self?.drag(panel, with: event) }
+        window.cornerDrag = { [weak self] event in self?.resize(panel, with: event) }
         window.title = "Mac-Amp \(panel.rawValue)"; window.isReleasedWhenClosed = false; window.isMovableByWindowBackground = false; window.delegate = self
         // Transparent so skins can round corners or draw non-rectangular players.
         window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = true
@@ -43,12 +77,12 @@ import MacAmpCore
         // Layout players mark their own drag areas instead of a fixed title strip.
         (window as? PlayerWindow)?.titleDragHeight = panel == .player ? (model.palette.layout == nil ? 24 * scale : 0) : 18 * scale
         (window as? PlayerWindow)?.closeButtonWidth = 24 * scale
+        (window as? PlayerWindow)?.gripSize = Self.resizable[panel] != nil ? 14 * scale : 0
         var width: CGFloat = 275, height: CGFloat
         switch panel {
         case .player: (width, height) = Self.playerSize(model.palette)
-        case .playlist: height = 245
+        case .playlist, .skins: height = self.height(of: panel)
         case .equalizer: height = 116
-        case .skins: height = Self.skinsHeight
         }
         let size = NSSize(width: width, height: height)
         let view: AnyView
@@ -58,7 +92,14 @@ import MacAmpCore
         case .equalizer: view = AnyView(EqualizerView(model: model, windows: self))
         case .skins: view = AnyView(SkinsView(model: model, windows: self))
         }
-        window.contentView = NSHostingView(rootView: Themed(model: model, content: view).scaleEffect(scale, anchor: .topLeading).frame(width: size.width * scale,height: size.height * scale, alignment: .topLeading))
+        // The content follows the window's size, so a live resize needs no rebuild.
+        let model = self.model
+        let host = NSHostingView(rootView: GeometryReader { proxy in
+            Themed(model: model, content: view).frame(width: proxy.size.width / scale, height: proxy.size.height / scale)
+                .scaleEffect(scale, anchor: .topLeading)
+        })
+        host.sizingOptions = []
+        window.contentView = host
         let top = window.frame.maxY; window.setContentSize(NSSize(width: size.width * scale,height: size.height * scale)); window.setFrameOrigin(NSPoint(x: window.frame.minX,y: top - window.frame.height))
         window.invalidateShadow()
         if let screen = window.screen ?? NSScreen.main {
@@ -165,8 +206,14 @@ struct Themed: View {
 final class PlayerWindow: NSWindow {
     var titleDragHeight: CGFloat = 24
     var closeButtonWidth: CGFloat = 24
+    var gripSize: CGFloat = 0
+    var cornerDrag: ((NSEvent) -> Void)?
     override func sendEvent(_ event: NSEvent) {
         let point = event.locationInWindow
+        if event.type == .leftMouseDown, gripSize > 0, point.x >= frame.width - gripSize, point.y <= gripSize {
+            cornerDrag?(event)
+            return
+        }
         if event.type == .leftMouseDown, titleDragHeight > 0, point.y >= frame.height - titleDragHeight,
            point.x >= 0, point.x < frame.width - closeButtonWidth {
             titleDrag?(event)

@@ -108,6 +108,8 @@ On Macs without a notch, the same hover spot sits at the top centre of the main 
 
 ### Moving and docking windows
 
+Drag the striped grip in the bottom-right corner of the playlist or skins panel up or down to change its height. Windows docked below move with it, and the size is remembered.
+
 Drag any window by its title bar. Bring a panel within about 24 points of another window's edge and it snaps there; drag it away to detach it.
 
 ### Keyboard shortcuts
